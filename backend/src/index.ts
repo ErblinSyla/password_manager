@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
+import authRoutes from "./routes/auth";
 
 dotenv.config();
 
@@ -19,6 +20,8 @@ app.use(express.json());
 app.get("/health", (req, res) => {
   res.json({ status: "ok", message: "Server is running" });
 });
+
+app.use("/api/auth", authRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
