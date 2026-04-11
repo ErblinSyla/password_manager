@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment variables - SHUME I RENDESISHEM, kurre mos e commito!
+.env
+.env.local
+.env.production
+backend/.env
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+
+# Prisma
+backend/prisma/migrations/dev.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/

@@ -1,0 +1,9 @@
+{
+  "name": "password-manager",
+  "private": true,
+  "workspaces": ["backend", "extension", "shared"],
+  "scripts": {
+    "dev:backend": "npm -w backend run dev",
+    "dev:extension": "npm -w extension run dev"
+  }
+}
