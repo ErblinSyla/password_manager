@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Password Manager</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script defer src="popup.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Password Manager</p>
+          <h1>Secure vault, instant autofill.</h1>
+          <p class="lede">
+            Store passwords, detect login pages, and fill credentials with one click.
+          </p>
+        </div>
+
+        <div class="status-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong>Extension ready</strong>
+            <p>3 demo entries loaded for layout preview.</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="stats-grid" aria-label="Quick stats">
+        <article class="stat-card accent">
+          <span>Detected page</span>
+          <strong>facebook.com/login</strong>
+          <p>Autofill available</p>
+        </article>
+        <article class="stat-card">
+          <span>Saved credentials</span>
+          <strong>12</strong>
+          <p>Across 5 domains</p>
+        </article>
+        <article class="stat-card">
+          <span>Encryption</span>
+          <strong>Local vault</strong>
+          <p>Zero-knowledge ready</p>
+        </article>
+      </section>
+
+      <section class="panel auth-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Account access</p>
+            <h2>Sign in or create your account</h2>
+          </div>
+
+          <div class="tab-group" role="tablist" aria-label="Authentication mode">
+            <button class="tab-button is-active" type="button" data-tab="sign-in" role="tab" aria-selected="true">Sign in</button>
+            <button class="tab-button" type="button" data-tab="create-account" role="tab" aria-selected="false">Create account</button>
+          </div>
+        </div>
+
+        <div class="tab-panels">
+          <form class="auth-form is-active" data-panel="sign-in">
+            <label>
+              Email
+              <input type="email" name="email" placeholder="you@example.com" />
+            </label>
+            <label>
+              Password
+              <input type="password" name="password" placeholder="••••••••" />
+            </label>
+            <button class="primary-button" type="button">Log in</button>
+            <p class="helper-text">Use this area for the auth flow once the backend is connected.</p>
+          </form>
+
+          <form class="auth-form" data-panel="create-account" hidden>
+            <label>
+              Email
+              <input type="email" name="register-email" placeholder="new-user@example.com" />
+            </label>
+            <label>
+              Master password
+              <input type="password" name="register-password" placeholder="Create a strong password" />
+            </label>
+            <label>
+              Confirm password
+              <input type="password" name="confirm-password" placeholder="Repeat password" />
+            </label>
+            <button class="primary-button" type="button">Create account</button>
+            <p class="helper-text">This is a layout-only placeholder for the onboarding flow.</p>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Autofill preview</p>
+            <h2>Detected login page</h2>
+          </div>
+          <button class="secondary-button" type="button">Refresh tab</button>
+        </div>
+
+        <div class="site-card">
+          <div>
+            <p class="site-domain">facebook.com</p>
+            <strong>Username and password fields found</strong>
+            <p>Choose a saved credential to populate the page instantly.</p>
+          </div>
+          <button class="primary-button" type="button">Autofill now</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Vault</p>
+            <h2>Recently saved passwords</h2>
+          </div>
+          <span class="pill">Demo data</span>
+        </div>
+
+        <div class="vault-list">
+          <article class="vault-item">
+            <div>
+              <strong>Facebook</strong>
+              <p>facebook.com</p>
+            </div>
+            <div class="vault-item-actions">
+              <button type="button">Copy</button>
+              <button type="button">Fill</button>
+            </div>
+          </article>
+          <article class="vault-item">
+            <div>
+              <strong>Instagram</strong>
+              <p>instagram.com</p>
+            </div>
+            <div class="vault-item-actions">
+              <button type="button">Copy</button>
+              <button type="button">Fill</button>
+            </div>
+          </article>
+          <article class="vault-item">
+            <div>
+              <strong>GitHub</strong>
+              <p>github.com</p>
+            </div>
+            <div class="vault-item-actions">
+              <button type="button">Copy</button>
+              <button type="button">Fill</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

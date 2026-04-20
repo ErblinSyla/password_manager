@@ -5,12 +5,12 @@
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "src/background/index.ts",
+    "service_worker": "src/background/index.js",
     "type": "module"
   },
   "content_scripts": [{
     "matches": ["<all_urls>"],
-    "js": ["src/content/index.ts"]
+    "js": ["src/content/index.js"]
   }],
   "action": {
     "default_popup": "public/popup.html"

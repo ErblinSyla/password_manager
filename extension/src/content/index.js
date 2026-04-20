@@ -1,0 +1,1 @@
+console.debug("Password Manager content script loaded");
