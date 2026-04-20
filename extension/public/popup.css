@@ -265,6 +265,17 @@ input {
   line-height: 1.45;
 }
 
+.auth-feedback {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.82rem;
+  color: var(--accent-strong);
+}
+
+.auth-feedback.is-error {
+  color: #b42318;
+}
+
 .site-card {
   display: flex;
   align-items: center;

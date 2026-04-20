@@ -21,8 +21,8 @@
         <div class="status-card">
           <span class="status-dot"></span>
           <div>
-            <strong>Extension ready</strong>
-            <p>3 demo entries loaded for layout preview.</p>
+            <strong id="connection-title">Extension ready</strong>
+            <p id="connection-message">Connects to the local backend on localhost:3001.</p>
           </div>
         </div>
       </header>
@@ -68,7 +68,7 @@
               Password
               <input type="password" name="password" placeholder="••••••••" />
             </label>
-            <button class="primary-button" type="button">Log in</button>
+            <button class="primary-button" type="submit">Log in</button>
             <p class="helper-text">Use this area for the auth flow once the backend is connected.</p>
           </form>
 
@@ -85,7 +85,7 @@
               Confirm password
               <input type="password" name="confirm-password" placeholder="Repeat password" />
             </label>
-            <button class="primary-button" type="button">Create account</button>
+            <button class="primary-button" type="submit">Create account</button>
             <p class="helper-text">This is a layout-only placeholder for the onboarding flow.</p>
           </form>
         </div>
