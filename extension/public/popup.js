@@ -4,9 +4,14 @@ const signInForm = document.querySelector('[data-panel="sign-in"]');
 const registerForm = document.querySelector('[data-panel="create-account"]');
 const connectionTitle = document.getElementById("connection-title");
 const connectionMessage = document.getElementById("connection-message");
+const lockButton = document.getElementById("lock-button");
+const gatedSections = Array.from(document.querySelectorAll("[data-when]"));
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
+const AUTO_LOCK_MS = 5 * 60 * 1000;
+
+let autoLockTimer = null;
 
 function setActiveTab(tabName) {
   tabButtons.forEach((button) => {
@@ -33,7 +38,37 @@ function setStatus(title, message, isError = false) {
   }
 }
 
-function readSession() {
+function setAuthVisibility(isAuthed) {
+  gatedSections.forEach((section) => {
+    const when = section.getAttribute("data-when");
+    if (when === "authed") {
+      section.hidden = !isAuthed;
+    }
+    if (when === "unauthed") {
+      section.hidden = isAuthed;
+    }
+  });
+
+  if (lockButton) {
+    lockButton.hidden = !isAuthed;
+  }
+}
+
+function isChromeSessionStorageAvailable() {
+  return (
+    typeof chrome !== "undefined" &&
+    !!chrome.storage &&
+    !!chrome.storage.session &&
+    typeof chrome.storage.session.get === "function"
+  );
+}
+
+async function readSession() {
+  if (isChromeSessionStorageAvailable()) {
+    const result = await chrome.storage.session.get(SESSION_KEY);
+    return result?.[SESSION_KEY] ?? null;
+  }
+
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
   } catch {
@@ -41,12 +76,47 @@ function readSession() {
   }
 }
 
-function writeSession(session) {
+async function writeSession(session) {
+  if (isChromeSessionStorageAvailable()) {
+    await chrome.storage.session.set({ [SESSION_KEY]: session });
+    return;
+  }
+
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
-function clearSession() {
+async function clearSession() {
+  if (isChromeSessionStorageAvailable()) {
+    await chrome.storage.session.remove(SESSION_KEY);
+    return;
+  }
+
   localStorage.removeItem(SESSION_KEY);
+}
+
+function resetAutoLockTimer() {
+  if (autoLockTimer) {
+    clearTimeout(autoLockTimer);
+  }
+
+  if (isChromeSessionStorageAvailable()) {
+    try {
+      chrome?.runtime?.sendMessage?.({ type: "ACTIVITY" });
+    } catch {
+      // ignore
+    }
+  }
+
+  autoLockTimer = setTimeout(async () => {
+    await clearSession();
+    try {
+      chrome?.runtime?.sendMessage?.({ type: "CLEAR_KEY" });
+    } catch {
+      // ignore
+    }
+    setStatus("Locked", "Session cleared due to inactivity.", true);
+    setAuthVisibility(false);
+  }, AUTO_LOCK_MS);
 }
 
 async function apiRequest(path, options = {}) {
@@ -68,12 +138,16 @@ async function apiRequest(path, options = {}) {
 }
 
 async function refreshSessionState() {
-  const session = readSession();
+  const session = await readSession();
 
   if (!session?.token) {
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
+    setAuthVisibility(false);
     return;
   }
+
+  setAuthVisibility(true);
+  resetAutoLockTimer();
 
   try {
     const data = await apiRequest("/auth/me", {
@@ -87,8 +161,9 @@ async function refreshSessionState() {
       `Welcome back, ${data.user.email}. Your session is active.`
     );
   } catch {
-    clearSession();
+    await clearSession();
     setStatus("Session expired", "Please sign in again.", true);
+    setAuthVisibility(false);
   }
 }
 
@@ -126,9 +201,16 @@ async function handleSignIn(event) {
       body: JSON.stringify({ email, password }),
     });
 
-    writeSession(data);
+    await writeSession(data);
+    try {
+      chrome?.runtime?.sendMessage?.({ type: "SESSION_STARTED" });
+    } catch {
+      // ignore
+    }
     setStatus("Signed in", `Welcome back, ${data.user.email}. Your session is active.`);
     feedback.textContent = "Logged in successfully.";
+    setAuthVisibility(true);
+    resetAutoLockTimer();
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to log in.";
     feedback.classList.add("is-error");
@@ -164,9 +246,16 @@ async function handleRegister(event) {
       body: JSON.stringify({ email, password }),
     });
 
-    writeSession(data);
+    await writeSession(data);
+    try {
+      chrome?.runtime?.sendMessage?.({ type: "SESSION_STARTED" });
+    } catch {
+      // ignore
+    }
     setStatus("Signed in", `Welcome, ${data.user.email}. Your account is ready.`);
     feedback.textContent = "Account created successfully.";
+    setAuthVisibility(true);
+    resetAutoLockTimer();
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to create account.";
     feedback.classList.add("is-error");
@@ -185,5 +274,21 @@ tabButtons.forEach((button) => {
 signInForm?.addEventListener("submit", handleSignIn);
 registerForm?.addEventListener("submit", handleRegister);
 
+lockButton?.addEventListener("click", async () => {
+  await clearSession();
+  try {
+    chrome?.runtime?.sendMessage?.({ type: "CLEAR_KEY" });
+  } catch {
+    // ignore
+  }
+  setStatus("Locked", "Session cleared.");
+  setAuthVisibility(false);
+});
+
+window.addEventListener("mousemove", resetAutoLockTimer);
+window.addEventListener("keydown", resetAutoLockTimer);
+window.addEventListener("click", resetAutoLockTimer);
+
 setActiveTab("sign-in");
-refreshSessionState();
+setAuthVisibility(false);
+void refreshSessionState();

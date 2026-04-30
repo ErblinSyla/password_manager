@@ -18,6 +18,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -107,11 +111,16 @@ input {
 
 .status-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   padding: 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.status-card .secondary-button {
+  margin-left: auto;
+  align-self: center;
 }
 
 .status-dot {

@@ -24,10 +24,11 @@
             <strong id="connection-title">Extension ready</strong>
             <p id="connection-message">Connects to the local backend on localhost:3001.</p>
           </div>
+          <button class="secondary-button" type="button" id="lock-button" hidden>Lock</button>
         </div>
       </header>
 
-      <section class="stats-grid" aria-label="Quick stats">
+      <section class="stats-grid" aria-label="Quick stats" data-when="authed" hidden>
         <article class="stat-card accent">
           <span>Detected page</span>
           <strong>facebook.com/login</strong>
@@ -45,7 +46,7 @@
         </article>
       </section>
 
-      <section class="panel auth-panel">
+      <section class="panel auth-panel" data-when="unauthed">
         <div class="panel-header">
           <div>
             <p class="section-label">Account access</p>
@@ -91,7 +92,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-when="authed" hidden>
         <div class="panel-header compact">
           <div>
             <p class="section-label">Autofill preview</p>
@@ -110,7 +111,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-when="authed" hidden>
         <div class="panel-header compact">
           <div>
             <p class="section-label">Vault</p>
