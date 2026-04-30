@@ -28,7 +28,7 @@
         </div>
       </header>
 
-      <section class="stats-grid" aria-label="Quick stats" data-when="authed" hidden>
+      <section class="stats-grid" aria-label="Quick stats" data-when="unlocked" hidden>
         <article class="stat-card accent">
           <span>Detected page</span>
           <strong>facebook.com/login</strong>
@@ -92,7 +92,25 @@
         </div>
       </section>
 
-      <section class="panel" data-when="authed" hidden>
+      <section class="panel" data-when="locked" hidden>
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Vault</p>
+            <h2>Unlock to view passwords</h2>
+          </div>
+        </div>
+
+        <form class="auth-form" id="unlock-form">
+          <label>
+            Master password
+            <input type="password" name="unlock-password" placeholder="Enter master password" autocomplete="current-password" />
+          </label>
+          <button class="primary-button" type="submit">Unlock vault</button>
+          <p class="helper-text">The master password never leaves your browser. It is used only to derive an encryption key locally.</p>
+        </form>
+      </section>
+
+      <section class="panel" data-when="unlocked" hidden>
         <div class="panel-header compact">
           <div>
             <p class="section-label">Autofill preview</p>
@@ -111,7 +129,7 @@
         </div>
       </section>
 
-      <section class="panel" data-when="authed" hidden>
+      <section class="panel" data-when="unlocked" hidden>
         <div class="panel-header compact">
           <div>
             <p class="section-label">Vault</p>

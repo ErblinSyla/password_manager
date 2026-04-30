@@ -6,12 +6,14 @@ const connectionTitle = document.getElementById("connection-title");
 const connectionMessage = document.getElementById("connection-message");
 const lockButton = document.getElementById("lock-button");
 const gatedSections = Array.from(document.querySelectorAll("[data-when]"));
+const unlockForm = document.getElementById("unlock-form");
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
-const AUTO_LOCK_MS = 5 * 60 * 1000;
 
-let autoLockTimer = null;
+function hasChromeRuntime() {
+  return typeof chrome !== "undefined" && !!chrome.runtime && typeof chrome.runtime.sendMessage === "function";
+}
 
 function setActiveTab(tabName) {
   tabButtons.forEach((button) => {
@@ -38,19 +40,16 @@ function setStatus(title, message, isError = false) {
   }
 }
 
-function setAuthVisibility(isAuthed) {
+function setViewState({ isAuthed, isUnlocked }) {
   gatedSections.forEach((section) => {
     const when = section.getAttribute("data-when");
-    if (when === "authed") {
-      section.hidden = !isAuthed;
-    }
-    if (when === "unauthed") {
-      section.hidden = isAuthed;
-    }
+    if (when === "unauthed") section.hidden = isAuthed;
+    if (when === "locked") section.hidden = !isAuthed || isUnlocked;
+    if (when === "unlocked") section.hidden = !isAuthed || !isUnlocked;
   });
 
   if (lockButton) {
-    lockButton.hidden = !isAuthed;
+    lockButton.hidden = !isAuthed || !isUnlocked;
   }
 }
 
@@ -61,6 +60,22 @@ function isChromeSessionStorageAvailable() {
     !!chrome.storage.session &&
     typeof chrome.storage.session.get === "function"
   );
+}
+
+function sendMessage(message) {
+  if (!hasChromeRuntime()) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        resolve(response ?? null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 async function readSession() {
@@ -94,29 +109,10 @@ async function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
-function resetAutoLockTimer() {
-  if (autoLockTimer) {
-    clearTimeout(autoLockTimer);
-  }
-
+function reportActivity() {
   if (isChromeSessionStorageAvailable()) {
-    try {
-      chrome?.runtime?.sendMessage?.({ type: "ACTIVITY" });
-    } catch {
-      // ignore
-    }
+    void sendMessage({ type: "ACTIVITY" });
   }
-
-  autoLockTimer = setTimeout(async () => {
-    await clearSession();
-    try {
-      chrome?.runtime?.sendMessage?.({ type: "CLEAR_KEY" });
-    } catch {
-      // ignore
-    }
-    setStatus("Locked", "Session cleared due to inactivity.", true);
-    setAuthVisibility(false);
-  }, AUTO_LOCK_MS);
 }
 
 async function apiRequest(path, options = {}) {
@@ -142,12 +138,20 @@ async function refreshSessionState() {
 
   if (!session?.token) {
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
-    setAuthVisibility(false);
+    setViewState({ isAuthed: false, isUnlocked: false });
     return;
   }
 
-  setAuthVisibility(true);
-  resetAutoLockTimer();
+  // In Vite preview there is no chrome.runtime, so treat it as "unlocked" for UI.
+  let isUnlocked = !hasChromeRuntime();
+
+  if (hasChromeRuntime()) {
+    const response = await sendMessage({ type: "IS_UNLOCKED" });
+    isUnlocked = Boolean(response?.unlocked);
+  }
+
+  setViewState({ isAuthed: true, isUnlocked });
+  reportActivity();
 
   try {
     const data = await apiRequest("/auth/me", {
@@ -156,14 +160,15 @@ async function refreshSessionState() {
       },
     });
 
-    setStatus(
-      "Signed in",
-      `Welcome back, ${data.user.email}. Your session is active.`
-    );
+    if (isUnlocked) {
+      setStatus("Unlocked", `Vault ready for ${data.user.email}. Auto-lock after inactivity.`);
+    } else {
+      setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+    }
   } catch {
     await clearSession();
     setStatus("Session expired", "Please sign in again.", true);
-    setAuthVisibility(false);
+    setViewState({ isAuthed: false, isUnlocked: false });
   }
 }
 
@@ -201,16 +206,33 @@ async function handleSignIn(event) {
       body: JSON.stringify({ email, password }),
     });
 
-    await writeSession(data);
-    try {
-      chrome?.runtime?.sendMessage?.({ type: "SESSION_STARTED" });
-    } catch {
-      // ignore
+    if (hasChromeRuntime()) {
+      const keyCheckResp = await sendMessage({
+        type: "CREATE_KEY_CHECK",
+        masterPassword: password,
+        salt: data.salt,
+      });
+
+      if (!keyCheckResp?.ok) {
+        throw new Error(keyCheckResp?.error || "Unable to initialize vault session");
+      }
+
+      await writeSession({
+        ...data,
+        keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
+        keyCheckIv: keyCheckResp.keyCheckIv,
+      });
+
+      setViewState({ isAuthed: true, isUnlocked: false });
+      setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+    } else {
+      await writeSession(data);
+      setViewState({ isAuthed: true, isUnlocked: true });
+      setStatus("Signed in", `Welcome back, ${data.user.email}.`);
     }
-    setStatus("Signed in", `Welcome back, ${data.user.email}. Your session is active.`);
-    feedback.textContent = "Logged in successfully.";
-    setAuthVisibility(true);
-    resetAutoLockTimer();
+
+    reportActivity();
+    feedback.textContent = "Signed in. Vault is locked.";
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to log in.";
     feedback.classList.add("is-error");
@@ -246,16 +268,33 @@ async function handleRegister(event) {
       body: JSON.stringify({ email, password }),
     });
 
-    await writeSession(data);
-    try {
-      chrome?.runtime?.sendMessage?.({ type: "SESSION_STARTED" });
-    } catch {
-      // ignore
+    if (hasChromeRuntime()) {
+      const keyCheckResp = await sendMessage({
+        type: "CREATE_KEY_CHECK",
+        masterPassword: password,
+        salt: data.salt,
+      });
+
+      if (!keyCheckResp?.ok) {
+        throw new Error(keyCheckResp?.error || "Unable to initialize vault session");
+      }
+
+      await writeSession({
+        ...data,
+        keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
+        keyCheckIv: keyCheckResp.keyCheckIv,
+      });
+
+      setViewState({ isAuthed: true, isUnlocked: false });
+      setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+    } else {
+      await writeSession(data);
+      setViewState({ isAuthed: true, isUnlocked: true });
+      setStatus("Signed in", `Welcome, ${data.user.email}.`);
     }
-    setStatus("Signed in", `Welcome, ${data.user.email}. Your account is ready.`);
-    feedback.textContent = "Account created successfully.";
-    setAuthVisibility(true);
-    resetAutoLockTimer();
+
+    reportActivity();
+    feedback.textContent = "Account created. Vault is locked.";
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to create account.";
     feedback.classList.add("is-error");
@@ -275,20 +314,58 @@ signInForm?.addEventListener("submit", handleSignIn);
 registerForm?.addEventListener("submit", handleRegister);
 
 lockButton?.addEventListener("click", async () => {
-  await clearSession();
-  try {
-    chrome?.runtime?.sendMessage?.({ type: "CLEAR_KEY" });
-  } catch {
-    // ignore
-  }
-  setStatus("Locked", "Session cleared.");
-  setAuthVisibility(false);
+  await sendMessage({ type: "CLEAR_KEY" });
+  setStatus("Vault locked", "Vault locked. Unlock to view passwords.");
+  setViewState({ isAuthed: true, isUnlocked: false });
 });
 
-window.addEventListener("mousemove", resetAutoLockTimer);
-window.addEventListener("keydown", resetAutoLockTimer);
-window.addEventListener("click", resetAutoLockTimer);
+unlockForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const session = await readSession();
+  if (!session?.salt) {
+    setStatus("Unlock failed", "Missing salt in session. Please sign in again.", true);
+    return;
+  }
+
+  if (!session?.keyCheckCiphertext || !session?.keyCheckIv) {
+    setStatus(
+      "Unlock failed",
+      "Missing vault verifier. Please sign out and sign in again.",
+      true
+    );
+    return;
+  }
+
+  const formData = new FormData(unlockForm);
+  const masterPassword = String(formData.get("unlock-password") || "");
+  if (!masterPassword) {
+    setStatus("Unlock failed", "Enter your master password.", true);
+    return;
+  }
+
+  const unlockResp = await sendMessage({
+    type: "UNLOCK",
+    masterPassword,
+    salt: session.salt,
+    keyCheckCiphertext: session.keyCheckCiphertext,
+    keyCheckIv: session.keyCheckIv,
+  });
+
+  if (unlockResp?.ok) {
+    setViewState({ isAuthed: true, isUnlocked: true });
+    setStatus("Unlocked", "Vault unlocked. Auto-lock after inactivity.");
+    unlockForm.reset();
+    reportActivity();
+  } else {
+    setStatus("Unlock failed", unlockResp?.error || "Unable to unlock vault.", true);
+  }
+});
+
+window.addEventListener("mousemove", reportActivity);
+window.addEventListener("keydown", reportActivity);
+window.addEventListener("click", reportActivity);
 
 setActiveTab("sign-in");
-setAuthVisibility(false);
+setViewState({ isAuthed: false, isUnlocked: false });
 void refreshSessionState();
