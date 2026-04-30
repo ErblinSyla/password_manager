@@ -5,6 +5,7 @@ const registerForm = document.querySelector('[data-panel="create-account"]');
 const connectionTitle = document.getElementById("connection-title");
 const connectionMessage = document.getElementById("connection-message");
 const lockButton = document.getElementById("lock-button");
+const signOutButton = document.getElementById("signout-button");
 const gatedSections = Array.from(document.querySelectorAll("[data-when]"));
 const unlockForm = document.getElementById("unlock-form");
 
@@ -50,6 +51,10 @@ function setViewState({ isAuthed, isUnlocked }) {
 
   if (lockButton) {
     lockButton.hidden = !isAuthed || !isUnlocked;
+  }
+
+  if (signOutButton) {
+    signOutButton.hidden = !isAuthed;
   }
 }
 
@@ -115,6 +120,31 @@ function reportActivity() {
   }
 }
 
+async function clearVaultKey() {
+  if (!hasChromeRuntime()) {
+    return;
+  }
+
+  await sendMessage({ type: "CLEAR_KEY" });
+}
+
+async function signOut({ title, message, isError = false } = {}) {
+  await clearVaultKey();
+  await clearSession();
+  signInForm?.reset();
+  registerForm?.reset();
+  signInForm?.querySelector(".auth-feedback")?.classList.remove("is-error");
+  registerForm?.querySelector(".auth-feedback")?.classList.remove("is-error");
+  const signInFeedback = signInForm?.querySelector(".auth-feedback");
+  if (signInFeedback) signInFeedback.textContent = "";
+  const registerFeedback = registerForm?.querySelector(".auth-feedback");
+  if (registerFeedback) registerFeedback.textContent = "";
+  unlockForm?.reset();
+  setActiveTab("sign-in");
+  setStatus(title || "Signed out", message || "Please sign in to continue.", isError);
+  setViewState({ isAuthed: false, isUnlocked: false });
+}
+
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -137,6 +167,7 @@ async function refreshSessionState() {
   const session = await readSession();
 
   if (!session?.token) {
+    await clearVaultKey();
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
     setViewState({ isAuthed: false, isUnlocked: false });
     return;
@@ -166,9 +197,7 @@ async function refreshSessionState() {
       setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
     }
   } catch {
-    await clearSession();
-    setStatus("Session expired", "Please sign in again.", true);
-    setViewState({ isAuthed: false, isUnlocked: false });
+    await signOut({ title: "Session expired", message: "Please sign in again.", isError: true });
   }
 }
 
@@ -314,9 +343,13 @@ signInForm?.addEventListener("submit", handleSignIn);
 registerForm?.addEventListener("submit", handleRegister);
 
 lockButton?.addEventListener("click", async () => {
-  await sendMessage({ type: "CLEAR_KEY" });
+  await clearVaultKey();
   setStatus("Vault locked", "Vault locked. Unlock to view passwords.");
   setViewState({ isAuthed: true, isUnlocked: false });
+});
+
+signOutButton?.addEventListener("click", async () => {
+  await signOut({ title: "Signed out", message: "Session cleared. Sign in to continue." });
 });
 
 unlockForm?.addEventListener("submit", async (event) => {
