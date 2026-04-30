@@ -34,7 +34,7 @@
       <section class="stats-grid" aria-label="Quick stats" data-when="unlocked" hidden>
         <article class="stat-card accent">
           <span>Detected page</span>
-          <strong>facebook.com/login</strong>
+          <strong id="detected-page">-</strong>
           <p>Autofill available</p>
         </article>
         <article class="stat-card">
@@ -119,16 +119,16 @@
             <p class="section-label">Autofill preview</p>
             <h2>Detected login page</h2>
           </div>
-          <button class="secondary-button" type="button">Refresh tab</button>
+          <button class="secondary-button" type="button" id="refresh-tab-button">Refresh tab</button>
         </div>
 
         <div class="site-card">
           <div>
-            <p class="site-domain">facebook.com</p>
-            <strong>Username and password fields found</strong>
+            <p class="site-domain" id="site-domain">-</p>
+            <strong id="site-fields-status">-</strong>
             <p>Choose a saved credential to populate the page instantly.</p>
           </div>
-          <button class="primary-button" type="button">Autofill now</button>
+          <button class="primary-button" type="button" id="autofill-button">Autofill now</button>
         </div>
       </section>
 

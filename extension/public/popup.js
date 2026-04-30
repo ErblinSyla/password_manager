@@ -8,6 +8,11 @@ const lockButton = document.getElementById("lock-button");
 const signOutButton = document.getElementById("signout-button");
 const gatedSections = Array.from(document.querySelectorAll("[data-when]"));
 const unlockForm = document.getElementById("unlock-form");
+const detectedPageLabel = document.getElementById("detected-page");
+const siteDomainLabel = document.getElementById("site-domain");
+const siteFieldsStatusLabel = document.getElementById("site-fields-status");
+const autofillButton = document.getElementById("autofill-button");
+const refreshTabButton = document.getElementById("refresh-tab-button");
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -83,6 +88,81 @@ function sendMessage(message) {
   });
 }
 
+function queryActiveTab() {
+  if (typeof chrome === "undefined" || !chrome.tabs || typeof chrome.tabs.query !== "function") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        resolve(Array.isArray(tabs) && tabs.length > 0 ? tabs[0] : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function sendMessageToTab(tabId, message) {
+  if (typeof chrome === "undefined" || !chrome.tabs || typeof chrome.tabs.sendMessage !== "function") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        resolve(response ?? null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function setDetectedSiteLabels({ url, fieldStatusText }) {
+  const domain = (() => {
+    try {
+      return url ? new URL(url).hostname : "-";
+    } catch {
+      return "-";
+    }
+  })();
+
+  if (detectedPageLabel) detectedPageLabel.textContent = domain;
+  if (siteDomainLabel) siteDomainLabel.textContent = domain;
+  if (siteFieldsStatusLabel) siteFieldsStatusLabel.textContent = fieldStatusText || "-";
+}
+
+async function refreshActiveTabAutofillState() {
+  if (!hasChromeRuntime()) {
+    setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
+    return;
+  }
+
+  const tab = await queryActiveTab();
+  const url = typeof tab?.url === "string" ? tab.url : null;
+  const tabId = typeof tab?.id === "number" ? tab.id : null;
+
+  setDetectedSiteLabels({ url, fieldStatusText: "Checking page fields…" });
+
+  if (!tabId) {
+    setDetectedSiteLabels({ url, fieldStatusText: "No active tab" });
+    return;
+  }
+
+  const detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
+  if (detectResp?.ok && detectResp?.hasPasswordField) {
+    if (detectResp?.hasUsernameField) {
+      setDetectedSiteLabels({ url, fieldStatusText: "Username and password fields found" });
+    } else {
+      setDetectedSiteLabels({ url, fieldStatusText: "Password field found" });
+    }
+  } else {
+    setDetectedSiteLabels({ url, fieldStatusText: "No login fields detected" });
+  }
+}
+
 async function readSession() {
   if (isChromeSessionStorageAvailable()) {
     const result = await chrome.storage.session.get(SESSION_KEY);
@@ -143,6 +223,7 @@ async function signOut({ title, message, isError = false } = {}) {
   setActiveTab("sign-in");
   setStatus(title || "Signed out", message || "Please sign in to continue.", isError);
   setViewState({ isAuthed: false, isUnlocked: false });
+  setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
 }
 
 async function apiRequest(path, options = {}) {
@@ -170,6 +251,7 @@ async function refreshSessionState() {
     await clearVaultKey();
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
     setViewState({ isAuthed: false, isUnlocked: false });
+    setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
     return;
   }
 
@@ -183,6 +265,10 @@ async function refreshSessionState() {
 
   setViewState({ isAuthed: true, isUnlocked });
   reportActivity();
+
+  if (isUnlocked) {
+    void refreshActiveTabAutofillState();
+  }
 
   try {
     const data = await apiRequest("/auth/me", {
@@ -346,6 +432,7 @@ lockButton?.addEventListener("click", async () => {
   await clearVaultKey();
   setStatus("Vault locked", "Vault locked. Unlock to view passwords.");
   setViewState({ isAuthed: true, isUnlocked: false });
+  setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
 });
 
 signOutButton?.addEventListener("click", async () => {
@@ -390,9 +477,37 @@ unlockForm?.addEventListener("submit", async (event) => {
     setStatus("Unlocked", "Vault unlocked. Auto-lock after inactivity.");
     unlockForm.reset();
     reportActivity();
+    void refreshActiveTabAutofillState();
   } else {
     setStatus("Unlock failed", unlockResp?.error || "Unable to unlock vault.", true);
   }
+});
+
+autofillButton?.addEventListener("click", async () => {
+  if (!hasChromeRuntime()) {
+    return;
+  }
+
+  const tab = await queryActiveTab();
+  const tabId = typeof tab?.id === "number" ? tab.id : null;
+  const url = typeof tab?.url === "string" ? tab.url : null;
+
+  if (!tabId || !url) {
+    setStatus("Autofill failed", "No active tab detected.", true);
+    return;
+  }
+
+  const resp = await sendMessage({ type: "AUTOFILL_ACTIVE_TAB", tabId, url });
+  if (resp?.ok) {
+    setStatus("Autofill", "Credentials filled on the current page.");
+    reportActivity();
+  } else {
+    setStatus("Autofill failed", resp?.error || "Unable to autofill.", true);
+  }
+});
+
+refreshTabButton?.addEventListener("click", async () => {
+  await refreshActiveTabAutofillState();
 });
 
 window.addEventListener("mousemove", reportActivity);

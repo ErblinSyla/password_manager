@@ -8,12 +8,23 @@ const AUTO_LOCK_MS = 5 * 60 * 1000;
 const AUTO_LOCK_ALARM = "pm_auto_lock";
 const LAST_ACTIVITY_KEY = "password-manager-last-activity";
 
+const API_BASE = "http://localhost:3001/api";
+const SESSION_KEY = "password-manager-session";
+
 const KEY_CHECK_PLAINTEXT = "pm:vault-key-check:v1";
 
 function storageSessionGet(key) {
   return new Promise((resolve) => {
     chrome.storage.session.get(key, (result) => {
       resolve(result?.[key] ?? null);
+    });
+  });
+}
+
+function storageSessionGetMany(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.session.get(keys, (result) => {
+      resolve(result || {});
     });
   });
 }
@@ -168,6 +179,67 @@ async function verifyKeyCheck(key, keyCheckCiphertext, keyCheckIv) {
   }
 }
 
+async function apiRequest(path, token) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Request failed");
+  }
+  return data;
+}
+
+async function readAuthToken() {
+  const result = await storageSessionGetMany([SESSION_KEY]);
+  const session = result?.[SESSION_KEY] ?? null;
+  const token = typeof session?.token === "string" ? session.token : "";
+  return token || null;
+}
+
+async function decryptCredentialPayload(ciphertextBase64, ivBase64) {
+  if (!derivedKey) {
+    throw new Error("Vault is locked");
+  }
+  const bytes = await aesGcmDecrypt(derivedKey, ciphertextBase64, ivBase64);
+  const text = new TextDecoder().decode(bytes);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Credential payload is not valid JSON");
+  }
+
+  const username = typeof parsed?.username === "string" ? parsed.username : "";
+  const password = typeof parsed?.password === "string" ? parsed.password : "";
+  if (!password) {
+    throw new Error("Credential payload missing password");
+  }
+
+  return { username, password };
+}
+
+function sendMessageToTab(tabId, message) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response ?? { ok: true });
+      });
+    } catch (error) {
+      resolve({ ok: false, error: error instanceof Error ? error.message : "Unable to message tab" });
+    }
+  });
+}
+
 async function deriveVaultKey(masterPassword, saltHex) {
   const encoder = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
@@ -287,6 +359,72 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "CLEAR_KEY") {
     void lockNow("manual").then(() => sendResponse?.({ ok: true }));
+    return true;
+  }
+
+  if (message.type === "AUTOFILL_ACTIVE_TAB") {
+    const tabId = message.tabId;
+    const url = message.url;
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    if (typeof tabId !== "number") {
+      sendResponse?.({ ok: false, error: "Missing tab id" });
+      return true;
+    }
+
+    if (typeof url !== "string" || url.length === 0) {
+      sendResponse?.({ ok: false, error: "Missing tab url" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) {
+          throw new Error("Not signed in");
+        }
+
+        let hostname;
+        try {
+          hostname = new URL(url).hostname;
+        } catch {
+          throw new Error("Invalid tab url");
+        }
+
+        const credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(hostname)}`, token);
+        if (!Array.isArray(credentials) || credentials.length === 0) {
+          throw new Error("No saved credential for this domain");
+        }
+
+        const first = credentials[0];
+        const ciphertext = typeof first?.ciphertext === "string" ? first.ciphertext : "";
+        const iv = typeof first?.iv === "string" ? first.iv : "";
+        if (!ciphertext || !iv) {
+          throw new Error("Stored credential is missing ciphertext/iv");
+        }
+
+        const { username, password } = await decryptCredentialPayload(ciphertext, iv);
+        const fillResp = await sendMessageToTab(tabId, {
+          type: "FILL_CREDENTIALS",
+          username,
+          password,
+        });
+
+        if (!fillResp?.ok) {
+          throw new Error(fillResp?.error || "Unable to fill this page");
+        }
+
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Autofill failed" });
+      }
+    })();
+
     return true;
   }
 });
