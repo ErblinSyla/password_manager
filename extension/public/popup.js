@@ -112,10 +112,49 @@ function sendMessageToTab(tabId, message) {
   return new Promise((resolve) => {
     try {
       chrome.tabs.sendMessage(tabId, message, (response) => {
-        resolve(response ?? null);
+        if (chrome.runtime?.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+
+        resolve(response ?? { ok: true });
       });
     } catch {
       resolve(null);
+    }
+  });
+}
+
+function isInjectableUrl(url) {
+  return typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"));
+}
+
+function injectContentScript(tabId, url) {
+  if (!isInjectableUrl(url)) {
+    return Promise.resolve({ ok: false, error: "This page does not allow autofill." });
+  }
+
+  if (typeof chrome === "undefined" || !chrome.scripting || typeof chrome.scripting.executeScript !== "function") {
+    return Promise.resolve({ ok: false, error: "Scripting API not available." });
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.scripting.executeScript(
+        {
+          target: { tabId },
+          files: ["src/content/index.js"],
+        },
+        () => {
+          if (chrome.runtime?.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve({ ok: true });
+        }
+      );
+    } catch (error) {
+      resolve({ ok: false, error: error instanceof Error ? error.message : "Unable to inject content script" });
     }
   });
 }
@@ -151,7 +190,25 @@ async function refreshActiveTabAutofillState() {
     return;
   }
 
-  const detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
+  let detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
+  if (detectResp?.ok === false && typeof detectResp?.error === "string") {
+    const looksLikeMissingReceiver = /receiving end does not exist|could not establish connection/i.test(
+      detectResp.error
+    );
+
+    if (looksLikeMissingReceiver) {
+      const injectResp = await injectContentScript(tabId, url);
+      if (injectResp?.ok) {
+        detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
+      }
+    }
+  }
+
+  if (detectResp?.ok === false) {
+    setDetectedSiteLabels({ url, fieldStatusText: detectResp?.error || "Unable to detect fields" });
+    return;
+  }
+
   if (detectResp?.ok && detectResp?.hasPasswordField) {
     if (detectResp?.hasUsernameField) {
       setDetectedSiteLabels({ url, fieldStatusText: "Username and password fields found" });
@@ -494,6 +551,12 @@ autofillButton?.addEventListener("click", async () => {
 
   if (!tabId || !url) {
     setStatus("Autofill failed", "No active tab detected.", true);
+    return;
+  }
+
+  const injectResp = await injectContentScript(tabId, url);
+  if (!injectResp?.ok && injectResp?.error) {
+    setStatus("Autofill failed", injectResp.error, true);
     return;
   }
 

@@ -1,4 +1,12 @@
-console.debug("Password Manager content script loaded");
+(() => {
+	if (globalThis.__pmContentScriptLoaded) {
+		// Avoid double-registering listeners if the script gets injected again.
+		console.debug("Password Manager content script already loaded");
+		return;
+	}
+
+	globalThis.__pmContentScriptLoaded = true;
+	console.debug("Password Manager content script loaded");
 
 function isVisibleInput(el) {
 	if (!el) return false;
@@ -115,7 +123,7 @@ document.addEventListener(
 	true
 );
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (!message || typeof message.type !== "string") {
 		return;
 	}
@@ -156,4 +164,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		sendResponse?.({ ok: true });
 		return true;
 	}
-});
+	});
+})();

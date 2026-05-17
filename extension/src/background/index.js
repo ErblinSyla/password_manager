@@ -253,6 +253,40 @@ function sendMessageToTab(tabId, message) {
   });
 }
 
+function isInjectableUrl(url) {
+  return typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"));
+}
+
+function injectContentScript(tabId, url) {
+  if (!isInjectableUrl(url)) {
+    return Promise.resolve({ ok: false, error: "This page does not allow autofill." });
+  }
+
+  if (!chrome.scripting || typeof chrome.scripting.executeScript !== "function") {
+    return Promise.resolve({ ok: false, error: "Scripting API not available." });
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.scripting.executeScript(
+        {
+          target: { tabId },
+          files: ["src/content/index.js"],
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve({ ok: true });
+        }
+      );
+    } catch (error) {
+      resolve({ ok: false, error: error instanceof Error ? error.message : "Unable to inject content script" });
+    }
+  });
+}
+
 async function deriveVaultKey(masterPassword, saltHex) {
   const encoder = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
@@ -421,11 +455,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const { username, password } = await decryptCredentialPayload(ciphertext, iv);
-        const fillResp = await sendMessageToTab(tabId, {
+
+        let fillResp = await sendMessageToTab(tabId, {
           type: "FILL_CREDENTIALS",
           username,
           password,
         });
+
+        if (fillResp?.ok === false && typeof fillResp?.error === "string") {
+          const looksLikeMissingReceiver = /receiving end does not exist|could not establish connection/i.test(
+            fillResp.error
+          );
+
+          if (looksLikeMissingReceiver) {
+            const injectResp = await injectContentScript(tabId, url);
+            if (injectResp?.ok) {
+              fillResp = await sendMessageToTab(tabId, {
+                type: "FILL_CREDENTIALS",
+                username,
+                password,
+              });
+            }
+          }
+        }
 
         if (!fillResp?.ok) {
           throw new Error(fillResp?.error || "Unable to fill this page");
