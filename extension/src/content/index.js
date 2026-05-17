@@ -54,6 +54,67 @@ function setInputValue(input, value) {
 	}
 }
 
+let lastSavedSignature = "";
+let lastSavedAt = 0;
+
+function shouldDedupeSave(signature) {
+	const now = Date.now();
+	if (signature && signature === lastSavedSignature && now - lastSavedAt < 30_000) {
+		return true;
+	}
+	lastSavedSignature = signature;
+	lastSavedAt = now;
+	return false;
+}
+
+async function tryAutoSaveFromForm(form) {
+	if (!form || !(form instanceof HTMLFormElement)) {
+		return;
+	}
+
+	const passwordField = findPasswordField(form);
+	if (!passwordField) {
+		return;
+	}
+
+	const password = typeof passwordField.value === "string" ? passwordField.value : "";
+	if (!password) {
+		return;
+	}
+
+	const usernameField = findUsernameField(passwordField);
+	const username = usernameField && typeof usernameField.value === "string" ? usernameField.value : "";
+
+	const signature = `${location.hostname}|${username}|${password}`;
+	if (shouldDedupeSave(signature)) {
+		return;
+	}
+
+	try {
+		const response = await chrome.runtime.sendMessage({
+			type: "SAVE_CREDENTIALS",
+			url: location.href,
+			username,
+			password,
+		});
+
+		if (!response?.ok) {
+			console.debug("Auto-save skipped/failed:", response?.error);
+		}
+	} catch (error) {
+		console.debug("Auto-save error:", error);
+	}
+}
+
+document.addEventListener(
+	"submit",
+	(event) => {
+		const form = event.target;
+		void tryAutoSaveFromForm(form);
+	},
+	true
+);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (!message || typeof message.type !== "string") {
 		return;

@@ -179,13 +179,15 @@ async function verifyKeyCheck(key, keyCheckCiphertext, keyCheckIv) {
   }
 }
 
-async function apiRequest(path, token) {
+async function apiRequest(path, token, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
+    method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
     },
+    body: options.body,
   });
 
   const data = await response.json().catch(() => ({}));
@@ -222,6 +224,17 @@ async function decryptCredentialPayload(ciphertextBase64, ivBase64) {
   }
 
   return { username, password };
+}
+
+async function encryptCredentialPayload(username, password) {
+  if (!derivedKey) {
+    throw new Error("Vault is locked");
+  }
+
+  const payload = JSON.stringify({ username: username || "", password });
+  const bytes = new TextEncoder().encode(payload);
+  const { ciphertextBase64, ivBase64 } = await aesGcmEncrypt(derivedKey, bytes);
+  return { ciphertext: ciphertextBase64, iv: ivBase64 };
 }
 
 function sendMessageToTab(tabId, message) {
@@ -422,6 +435,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse?.({ ok: true });
       } catch (error) {
         sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Autofill failed" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "SAVE_CREDENTIALS") {
+    const url = message.url;
+    const username = typeof message.username === "string" ? message.username : "";
+    const password = typeof message.password === "string" ? message.password : "";
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    if (typeof url !== "string" || url.length === 0) {
+      sendResponse?.({ ok: false, error: "Missing url" });
+      return true;
+    }
+
+    if (!password) {
+      sendResponse?.({ ok: false, error: "Missing password" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) {
+          throw new Error("Not signed in");
+        }
+
+        let hostname;
+        try {
+          hostname = new URL(url).hostname;
+        } catch {
+          throw new Error("Invalid url");
+        }
+
+        const { ciphertext, iv } = await encryptCredentialPayload(username, password);
+        await apiRequest("/credentials", token, {
+          method: "POST",
+          body: JSON.stringify({ domain: hostname, ciphertext, iv }),
+        });
+
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Save failed" });
       }
     })();
 
