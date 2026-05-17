@@ -226,6 +226,17 @@ async function decryptCredentialPayload(ciphertextBase64, ivBase64) {
   return { username, password };
 }
 
+function computeBaseDomain(hostname) {
+  if (typeof hostname !== "string") {
+    return null;
+  }
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length < 2) {
+    return hostname;
+  }
+  return parts.slice(-2).join(".");
+}
+
 async function encryptCredentialPayload(username, password) {
   if (!derivedKey) {
     throw new Error("Vault is locked");
@@ -412,6 +423,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "AUTOFILL_ACTIVE_TAB") {
     const tabId = message.tabId;
     const url = message.url;
+    const credentialId = typeof message.credentialId === "string" ? message.credentialId : null;
 
     if (!derivedKey) {
       sendResponse?.({ ok: false, error: "Vault is locked" });
@@ -442,12 +454,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error("Invalid tab url");
         }
 
-        const credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(hostname)}`, token);
+        let credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(hostname)}`, token);
+        if (!Array.isArray(credentials) || credentials.length === 0) {
+          const base = computeBaseDomain(hostname);
+          if (base && base !== hostname) {
+            credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(base)}`, token);
+          }
+        }
+
         if (!Array.isArray(credentials) || credentials.length === 0) {
           throw new Error("No saved credential for this domain");
         }
 
-        const first = credentials[0];
+        const selected = credentialId
+          ? credentials.find((c) => c && typeof c.id === "string" && c.id === credentialId)
+          : credentials[0];
+
+        const first = selected || credentials[0];
         const ciphertext = typeof first?.ciphertext === "string" ? first.ciphertext : "";
         const iv = typeof first?.iv === "string" ? first.iv : "";
         if (!ciphertext || !iv) {

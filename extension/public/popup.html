@@ -39,8 +39,8 @@
         </article>
         <article class="stat-card">
           <span>Saved credentials</span>
-          <strong>12</strong>
-          <p>Across 5 domains</p>
+          <strong id="saved-count">-</strong>
+          <p id="saved-count-subtitle">For this site</p>
         </article>
         <article class="stat-card">
           <span>Encryption</span>
@@ -138,41 +138,10 @@
             <p class="section-label">Vault</p>
             <h2>Recently saved passwords</h2>
           </div>
-          <span class="pill">Demo data</span>
+          <span class="pill" id="vault-pill">Live</span>
         </div>
 
-        <div class="vault-list">
-          <article class="vault-item">
-            <div>
-              <strong>Facebook</strong>
-              <p>facebook.com</p>
-            </div>
-            <div class="vault-item-actions">
-              <button type="button">Copy</button>
-              <button type="button">Fill</button>
-            </div>
-          </article>
-          <article class="vault-item">
-            <div>
-              <strong>Instagram</strong>
-              <p>instagram.com</p>
-            </div>
-            <div class="vault-item-actions">
-              <button type="button">Copy</button>
-              <button type="button">Fill</button>
-            </div>
-          </article>
-          <article class="vault-item">
-            <div>
-              <strong>GitHub</strong>
-              <p>github.com</p>
-            </div>
-            <div class="vault-item-actions">
-              <button type="button">Copy</button>
-              <button type="button">Fill</button>
-            </div>
-          </article>
-        </div>
+        <div class="vault-list" id="vault-list" aria-live="polite"></div>
       </section>
     </div>
   </body>

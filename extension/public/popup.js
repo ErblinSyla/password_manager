@@ -13,6 +13,12 @@ const siteDomainLabel = document.getElementById("site-domain");
 const siteFieldsStatusLabel = document.getElementById("site-fields-status");
 const autofillButton = document.getElementById("autofill-button");
 const refreshTabButton = document.getElementById("refresh-tab-button");
+const savedCountLabel = document.getElementById("saved-count");
+const savedCountSubtitle = document.getElementById("saved-count-subtitle");
+const vaultList = document.getElementById("vault-list");
+const vaultPill = document.getElementById("vault-pill");
+
+let activeHostname = null;
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -168,9 +174,178 @@ function setDetectedSiteLabels({ url, fieldStatusText }) {
     }
   })();
 
+  activeHostname = domain && domain !== "-" ? domain : null;
+
   if (detectedPageLabel) detectedPageLabel.textContent = domain;
   if (siteDomainLabel) siteDomainLabel.textContent = domain;
   if (siteFieldsStatusLabel) siteFieldsStatusLabel.textContent = fieldStatusText || "-";
+}
+
+function setSavedCount(count, subtitle) {
+  if (savedCountLabel) {
+    savedCountLabel.textContent = typeof count === "number" ? String(count) : "-";
+  }
+
+  if (savedCountSubtitle) {
+    savedCountSubtitle.textContent = subtitle || "";
+  }
+}
+
+function clearVaultList(message) {
+  if (!vaultList) {
+    return;
+  }
+
+  vaultList.innerHTML = "";
+  const p = document.createElement("p");
+  p.className = "vault-empty";
+  p.textContent = message;
+  vaultList.appendChild(p);
+}
+
+function formatTimestamp(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return "";
+  }
+  return d.toLocaleString();
+}
+
+function renderVaultItems(credentials, { onFill } = {}) {
+  if (!vaultList) {
+    return;
+  }
+
+  vaultList.innerHTML = "";
+
+  if (!Array.isArray(credentials) || credentials.length === 0) {
+    clearVaultList("No saved credentials for this site yet.");
+    return;
+  }
+
+  for (const cred of credentials) {
+    const article = document.createElement("article");
+    article.className = "vault-item";
+
+    const left = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = String(cred?.domain || "(unknown)");
+    const meta = document.createElement("p");
+    meta.textContent = cred?.createdAt ? `Saved ${formatTimestamp(cred.createdAt)}` : "Saved";
+    left.appendChild(title);
+    left.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "vault-item-actions";
+
+    const fillBtn = document.createElement("button");
+    fillBtn.type = "button";
+    fillBtn.textContent = "Fill";
+    fillBtn.addEventListener("click", () => {
+      onFill?.(cred);
+    });
+
+    actions.appendChild(fillBtn);
+    article.appendChild(left);
+    article.appendChild(actions);
+    vaultList.appendChild(article);
+  }
+}
+
+function computeBaseDomain(hostname) {
+  if (typeof hostname !== "string") {
+    return null;
+  }
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length < 2) {
+    return hostname;
+  }
+  return parts.slice(-2).join(".");
+}
+
+async function fetchCredentialsForDomain(token, hostname) {
+  if (!hostname) {
+    return [];
+  }
+  const encoded = encodeURIComponent(hostname);
+  return apiRequest(`/credentials/domain/${encoded}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+async function refreshVaultForActiveDomain() {
+  const session = await readSession();
+  const token = session?.token;
+
+  if (!token) {
+    setSavedCount(null, "For this site");
+    if (vaultPill) vaultPill.textContent = "";
+    if (vaultList) vaultList.innerHTML = "";
+    return;
+  }
+
+  if (!activeHostname) {
+    setSavedCount(null, "For this site");
+    if (vaultPill) vaultPill.textContent = "";
+    clearVaultList("Open a website tab to see saved credentials for that domain.");
+    return;
+  }
+
+  try {
+    let credentials = await fetchCredentialsForDomain(token, activeHostname);
+    let subtitle = `For ${activeHostname}`;
+
+    if ((!Array.isArray(credentials) || credentials.length === 0) && activeHostname) {
+      const base = computeBaseDomain(activeHostname);
+      if (base && base !== activeHostname) {
+        credentials = await fetchCredentialsForDomain(token, base);
+        subtitle = `For ${base}`;
+      }
+    }
+
+    const count = Array.isArray(credentials) ? credentials.length : 0;
+    setSavedCount(count, subtitle);
+    if (vaultPill) vaultPill.textContent = "Live";
+
+    renderVaultItems(credentials, {
+      onFill: async (cred) => {
+        const tab = await queryActiveTab();
+        const tabId = typeof tab?.id === "number" ? tab.id : null;
+        const url = typeof tab?.url === "string" ? tab.url : null;
+
+        if (!tabId || !url) {
+          setStatus("Autofill failed", "No active tab detected.", true);
+          return;
+        }
+
+        const injectResp = await injectContentScript(tabId, url);
+        if (!injectResp?.ok && injectResp?.error) {
+          setStatus("Autofill failed", injectResp.error, true);
+          return;
+        }
+
+        const resp = await sendMessage({
+          type: "AUTOFILL_ACTIVE_TAB",
+          tabId,
+          url,
+          credentialId: cred?.id,
+        });
+
+        if (resp?.ok) {
+          setStatus("Autofill", "Credentials filled on the current page.");
+          reportActivity();
+        } else {
+          setStatus("Autofill failed", resp?.error || "Unable to autofill.", true);
+        }
+      },
+    });
+  } catch (error) {
+    setSavedCount(null, "For this site");
+    if (vaultPill) vaultPill.textContent = "Error";
+    clearVaultList(error instanceof Error ? error.message : "Unable to load credentials.");
+  }
 }
 
 async function refreshActiveTabAutofillState() {
@@ -187,6 +362,7 @@ async function refreshActiveTabAutofillState() {
 
   if (!tabId) {
     setDetectedSiteLabels({ url, fieldStatusText: "No active tab" });
+    await refreshVaultForActiveDomain();
     return;
   }
 
@@ -206,6 +382,7 @@ async function refreshActiveTabAutofillState() {
 
   if (detectResp?.ok === false) {
     setDetectedSiteLabels({ url, fieldStatusText: detectResp?.error || "Unable to detect fields" });
+    await refreshVaultForActiveDomain();
     return;
   }
 
@@ -218,6 +395,8 @@ async function refreshActiveTabAutofillState() {
   } else {
     setDetectedSiteLabels({ url, fieldStatusText: "No login fields detected" });
   }
+
+  await refreshVaultForActiveDomain();
 }
 
 async function readSession() {
@@ -281,6 +460,10 @@ async function signOut({ title, message, isError = false } = {}) {
   setStatus(title || "Signed out", message || "Please sign in to continue.", isError);
   setViewState({ isAuthed: false, isUnlocked: false });
   setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
+  activeHostname = null;
+  setSavedCount(null, "For this site");
+  if (vaultPill) vaultPill.textContent = "";
+  if (vaultList) vaultList.innerHTML = "";
 }
 
 async function apiRequest(path, options = {}) {
@@ -309,6 +492,10 @@ async function refreshSessionState() {
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
     setViewState({ isAuthed: false, isUnlocked: false });
     setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
+    activeHostname = null;
+    setSavedCount(null, "For this site");
+    if (vaultPill) vaultPill.textContent = "";
+    if (vaultList) vaultList.innerHTML = "";
     return;
   }
 
@@ -325,6 +512,10 @@ async function refreshSessionState() {
 
   if (isUnlocked) {
     void refreshActiveTabAutofillState();
+  } else {
+    setSavedCount(null, "For this site");
+    if (vaultPill) vaultPill.textContent = "";
+    if (vaultList) vaultList.innerHTML = "";
   }
 
   try {
@@ -490,6 +681,10 @@ lockButton?.addEventListener("click", async () => {
   setStatus("Vault locked", "Vault locked. Unlock to view passwords.");
   setViewState({ isAuthed: true, isUnlocked: false });
   setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
+  activeHostname = null;
+  setSavedCount(null, "For this site");
+  if (vaultPill) vaultPill.textContent = "";
+  if (vaultList) vaultList.innerHTML = "";
 });
 
 signOutButton?.addEventListener("click", async () => {
