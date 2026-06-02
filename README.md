@@ -110,6 +110,14 @@ Vite opens the popup at something like `http://localhost:5173/popup.html`.
 3. Click **Refresh tab** to detect fields
 4. Click **Autofill now**
 
+### View All Credentials
+1. Open the extension popup and ensure the vault is **unlocked**.
+2. In the **Vault** section, use the tab buttons to switch views:
+   - **This site**: Shows credentials matching the active domain.
+   - **All sites**: Shows every saved credential in your vault.
+3. Use the **Search bar** to filter by username or domain in real-time.
+
+
 ## Troubleshooting
 
 ### Extension says “Vault is locked”

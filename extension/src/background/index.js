@@ -332,6 +332,24 @@ async function listCredentialRecordsForHostname(token, hostname) {
   return out;
 }
 
+async function listAllCredentialRecords(token) {
+  const credentials = await apiRequest("/credentials", token);
+  if (!Array.isArray(credentials)) {
+    return [];
+  }
+
+  const out = [];
+  for (const cred of credentials) {
+    try {
+      const record = await decryptCredentialRecord(cred);
+      if (record) out.push(record);
+    } catch {
+      // Skip records that cannot be decrypted with the current vault key.
+    }
+  }
+  return out;
+}
+
 function summarizeCredential(record, defaultCredentialId) {
   return {
     id: record.id,
@@ -653,9 +671,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const defaultCredentialId = await getDefaultCredentialId(hostname);
-        const selected = credentialId
+        let selected = credentialId
           ? credentials.find((c) => c && typeof c.id === "string" && c.id === credentialId)
           : credentials.find((c) => c && c.id === defaultCredentialId);
+
+        if (credentialId && !selected) {
+          const allRecords = await listAllCredentialRecords(token);
+          selected = allRecords.find((c) => c && c.id === credentialId) || null;
+        }
 
         const first = selected || credentials[0];
         const username = first.decrypted?.username || "";
@@ -726,6 +749,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "LIST_ALL_CREDENTIALS") {
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+        const records = await listAllCredentialRecords(token);
+        await touchActivity();
+        sendResponse?.({
+          ok: true,
+          credentials: records.map((record) => summarizeCredential(record, null)),
+        });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to load credentials" });
+      }
+    })();
+
+    return true;
+  }
+
   if (message.type === "UPDATE_CREDENTIAL") {
     const id = coerceString(message.id);
     const username = coerceString(message.username);
@@ -765,8 +812,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
-    if (!hostname || !id) {
-      sendResponse?.({ ok: false, error: "Missing hostname or credential id" });
+    if (!id) {
+      sendResponse?.({ ok: false, error: "Missing credential id" });
       return true;
     }
 
@@ -774,7 +821,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const token = await readAuthToken();
         if (!token) throw new Error("Not signed in");
-        const records = await listCredentialRecordsForHostname(token, hostname);
+        const records = hostname ? await listCredentialRecordsForHostname(token, hostname) : await listAllCredentialRecords(token);
         const record = records.find((item) => item.id === id);
         if (!record) throw new Error("Credential not found");
         await touchActivity();

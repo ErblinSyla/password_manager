@@ -49,6 +49,7 @@
         </article>
       </section>
 
+
       <section class="panel auth-panel" data-when="unauthed">
         <div class="panel-header">
           <div>
@@ -135,10 +136,14 @@
       <section class="panel" data-when="unlocked" hidden>
         <div class="panel-header compact">
           <div>
-            <p class="section-label">Vault</p>
-            <h2>Recently saved passwords</h2>
+            <h2 id="vault-title">Saved passwords</h2>
           </div>
           <span class="pill" id="vault-pill">Live</span>
+        </div>
+
+        <div class="vault-scope" role="group" aria-label="Vault view">
+          <button class="tab-button is-active" type="button" data-vault-scope="site">This site</button>
+          <button class="tab-button" type="button" data-vault-scope="all">All sites</button>
         </div>
 
         <label class="vault-search" for="vault-search" aria-label="Search saved credentials">

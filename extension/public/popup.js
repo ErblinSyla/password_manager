@@ -22,6 +22,7 @@ const credentialEditor = document.getElementById("credential-editor");
 const credentialEditForm = document.getElementById("credential-edit-form");
 const editUsernameInput = document.getElementById("edit-username");
 const editPasswordInput = document.getElementById("edit-password");
+const vaultScopeButtons = Array.from(document.querySelectorAll("[data-vault-scope]"));
 const editFeedback = document.getElementById("edit-feedback");
 const editCancelButton = document.getElementById("edit-cancel-button");
 const editRevealButton = document.getElementById("edit-reveal-button");
@@ -29,6 +30,7 @@ const editRevealButton = document.getElementById("edit-reveal-button");
 let activeHostname = null;
 
 let lastVaultCredentials = [];
+let showAllCredentials = false; // New state variable
 let currentVaultToken = null;
 let editingCredentialId = null;
 let pendingDeleteId = null;
@@ -406,7 +408,7 @@ async function handleVaultDelete(cred) {
     pendingDeleteUntil = 0;
     setStatus("Deleted", "Credential removed from the vault.");
     closeCredentialEditor();
-    await refreshVaultForActiveDomain();
+    await refreshVaultView();
   } catch (error) {
     setStatus("Delete failed", error instanceof Error ? error.message : "Unable to delete.", true);
   }
@@ -414,15 +416,17 @@ async function handleVaultDelete(cred) {
 
 async function handleVaultDefault(cred) {
   const id = String(cred?.id || "");
-  if (!activeHostname || !id) {
+  const hostname = showAllCredentials ? cred.domain : activeHostname;
+
+  if (!hostname || !id) {
     setStatus("Default failed", "Missing active domain or credential id.", true);
     return;
   }
 
-  const response = await sendMessage({ type: "SET_DEFAULT_CREDENTIAL", hostname: activeHostname, id });
+  const response = await sendMessage({ type: "SET_DEFAULT_CREDENTIAL", hostname, id });
   if (response?.ok) {
     setStatus("Default updated", "This credential will be used first for the domain.");
-    await refreshVaultForActiveDomain();
+    await refreshVaultView();
   } else {
     setStatus("Default failed", response?.error || "Unable to set default.", true);
   }
@@ -458,12 +462,14 @@ function closeCredentialEditor() {
 
 async function handleVaultEdit(cred) {
   const id = String(cred?.id || "");
-  if (!activeHostname || !id) {
+  const hostnameToFetch = showAllCredentials ? null : activeHostname;
+
+  if (!id) {
     setStatus("Edit failed", "Missing active domain or credential id.", true);
     return;
   }
 
-  const response = await sendMessage({ type: "GET_CREDENTIAL_FOR_EDIT", hostname: activeHostname, id });
+  const response = await sendMessage({ type: "GET_CREDENTIAL_FOR_EDIT", hostname: hostnameToFetch, id });
   if (!response?.ok) {
     setStatus("Edit failed", response?.error || "Unable to load credential.", true);
     return;
@@ -477,7 +483,7 @@ async function handleVaultEdit(cred) {
   });
 }
 
-async function refreshVaultForActiveDomain() {
+async function refreshVaultView() { // Renamed from refreshVaultForActiveDomain
   const session = await readSession();
   const token = session?.token;
 
@@ -486,34 +492,47 @@ async function refreshVaultForActiveDomain() {
     closeCredentialEditor();
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
-    if (vaultList) vaultList.innerHTML = "";
+    if (vaultList) clearVaultList("Please sign in to view credentials.");
     return;
   }
 
   currentVaultToken = token;
 
-  if (!activeHostname) {
-    setSavedCount(null, "For this site");
-    if (vaultPill) vaultPill.textContent = "";
-    clearVaultList("Open a website tab to see saved credentials for that domain.");
-    return;
-  }
-
   try {
-    let credentials = await fetchCredentialsForDomain(token, activeHostname);
-    let subtitle = `For ${activeHostname}`;
+    let credentials = [];
+    let subtitle = "";
+    let pillText = "";
 
-    if ((!Array.isArray(credentials) || credentials.length === 0) && activeHostname) {
-      const base = computeBaseDomain(activeHostname);
-      if (base && base !== activeHostname) {
-        credentials = await fetchCredentialsForDomain(token, base);
-        subtitle = `For ${base}`;
+    if (showAllCredentials) {
+      const response = await sendMessage({ type: "LIST_ALL_CREDENTIALS" });
+      if (!response?.ok) {
+        throw new Error(response?.error || "Unable to load all credentials.");
       }
+      credentials = Array.isArray(response.credentials) ? response.credentials : [];
+      subtitle = "All saved credentials";
+      pillText = "All";
+    } else if (activeHostname) {
+      credentials = await fetchCredentialsForDomain(token, activeHostname);
+      subtitle = `For ${activeHostname}`;
+
+      if ((!Array.isArray(credentials) || credentials.length === 0) && activeHostname) {
+        const base = computeBaseDomain(activeHostname);
+        if (base && base !== activeHostname) {
+          credentials = await fetchCredentialsForDomain(token, base);
+          subtitle = `For ${base}`;
+        }
+      }
+      pillText = "Live";
+    } else {
+      setSavedCount(null, "For this site");
+      if (vaultPill) vaultPill.textContent = "";
+      clearVaultList("Open a website tab to see saved credentials for that domain, or switch to 'All sites'.");
+      return;
     }
 
     const count = Array.isArray(credentials) ? credentials.length : 0;
     setSavedCount(count, subtitle);
-    if (vaultPill) vaultPill.textContent = "Live";
+    if (vaultPill) vaultPill.textContent = pillText;
 
     lastVaultCredentials = Array.isArray(credentials) ? credentials : [];
     const filtered = filterCredentials(lastVaultCredentials, vaultSearchInput?.value);
@@ -524,7 +543,7 @@ async function refreshVaultForActiveDomain() {
       onDelete: handleVaultDelete,
       onDefault: handleVaultDefault,
     });
-  } catch (error) {
+  } catch (error) { // Catch errors from both fetchCredentialsForDomain and LIST_ALL_CREDENTIALS
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "Error";
     clearVaultList(error instanceof Error ? error.message : "Unable to load credentials.");
@@ -538,7 +557,7 @@ vaultSearchInput?.addEventListener("input", () => {
     onEdit: handleVaultEdit,
     onDelete: handleVaultDelete,
     onDefault: handleVaultDefault,
-  });
+    }); // This will now filter from lastVaultCredentials which can contain all credentials
 });
 
 editCancelButton?.addEventListener("click", () => {
@@ -578,7 +597,7 @@ credentialEditForm?.addEventListener("submit", async (event) => {
   if (update?.ok) {
     setStatus("Credential updated", "Saved changes to the vault.");
     closeCredentialEditor();
-    await refreshVaultForActiveDomain();
+    await refreshVaultView();
   } else {
     setEditFeedback(update?.error || "Unable to update credential.", true);
   }
@@ -593,12 +612,20 @@ async function refreshActiveTabAutofillState() {
   const tab = await queryActiveTab();
   const url = typeof tab?.url === "string" ? tab.url : null;
   const tabId = typeof tab?.id === "number" ? tab.id : null;
+  
+  const domain = (() => {
+    try {
+      return url ? new URL(url).hostname : "-";
+    } catch {
+      return "-";
+    }
+  })();
+  activeHostname = domain && domain !== "-" ? domain : null; // Update activeHostname here
 
   setDetectedSiteLabels({ url, fieldStatusText: "Checking page fields…" });
 
   if (!tabId) {
-    setDetectedSiteLabels({ url, fieldStatusText: "No active tab" });
-    await refreshVaultForActiveDomain();
+    setDetectedSiteLabels({ url, fieldStatusText: "No active tab" }); // activeHostname is already null
     return;
   }
 
@@ -618,7 +645,7 @@ async function refreshActiveTabAutofillState() {
 
   if (detectResp?.ok === false) {
     setDetectedSiteLabels({ url, fieldStatusText: detectResp?.error || "Unable to detect fields" });
-    await refreshVaultForActiveDomain();
+    await refreshVaultView();
     return;
   }
 
@@ -632,7 +659,8 @@ async function refreshActiveTabAutofillState() {
     setDetectedSiteLabels({ url, fieldStatusText: "No login fields detected" });
   }
 
-  await refreshVaultForActiveDomain();
+  // Ensure the vault list updates whenever tab state is refreshed
+  await refreshVaultView();
 }
 
 async function readSession() {
@@ -699,6 +727,7 @@ async function signOut({ title, message, isError = false } = {}) {
   setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
   activeHostname = null;
   setSavedCount(null, "For this site");
+  resetVaultScope();
   if (vaultPill) vaultPill.textContent = "";
   if (vaultList) vaultList.innerHTML = "";
 }
@@ -731,6 +760,7 @@ async function refreshSessionState() {
     setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
     activeHostname = null;
     setSavedCount(null, "For this site");
+    resetVaultScope();
     if (vaultPill) vaultPill.textContent = "";
     if (vaultList) vaultList.innerHTML = "";
     closeCredentialEditor();
@@ -749,12 +779,13 @@ async function refreshSessionState() {
   reportActivity();
 
   if (isUnlocked) {
-    void refreshActiveTabAutofillState();
+    await refreshActiveTabAutofillState();
   } else {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
-    if (vaultList) vaultList.innerHTML = "";
+    if (vaultList) clearVaultList("Vault locked. Unlock to view passwords.");
     closeCredentialEditor();
+    resetVaultScope();
   }
 
   try {
@@ -923,6 +954,7 @@ lockButton?.addEventListener("click", async () => {
   setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
   activeHostname = null;
   setSavedCount(null, "For this site");
+  resetVaultScope();
   if (vaultPill) vaultPill.textContent = "";
   if (vaultList) vaultList.innerHTML = "";
 });
@@ -968,6 +1000,7 @@ unlockForm?.addEventListener("submit", async (event) => {
     setViewState({ isAuthed: true, isUnlocked: true });
     setStatus("Unlocked", "Vault unlocked. Auto-lock after inactivity.");
     unlockForm.reset();
+    resetVaultScope();
     reportActivity();
     void refreshActiveTabAutofillState();
   } else {
@@ -1005,13 +1038,43 @@ autofillButton?.addEventListener("click", async () => {
 });
 
 refreshTabButton?.addEventListener("click", async () => {
+  // This will update activeHostname and then call refreshVaultView
   await refreshActiveTabAutofillState();
+});
+
+async function setVaultScope(scope) {
+  showAllCredentials = (scope === "all");
+  
+  vaultScopeButtons.forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.vaultScope === scope);
+  });
+
+  if (vaultSearchInput) {
+    // Clear search when switching tabs for a fresh view
+    vaultSearchInput.value = "";
+    vaultSearchInput.placeholder = showAllCredentials 
+      ? "Search all saved credentials" 
+      : "Search this site's saved credentials";
+  }
+
+  await refreshVaultView();
+}
+
+function resetVaultScope() {
+  return setVaultScope("site");
+}
+
+vaultScopeButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.vaultScope) {
+      void setVaultScope(btn.dataset.vaultScope);
+    }
+  });
 });
 
 window.addEventListener("mousemove", reportActivity);
 window.addEventListener("keydown", reportActivity);
 window.addEventListener("click", reportActivity);
-
 setActiveTab("sign-in");
 setViewState({ isAuthed: false, isUnlocked: false });
 void refreshSessionState();
