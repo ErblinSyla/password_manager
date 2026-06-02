@@ -7,6 +7,8 @@ let derivedKey = null;
 const AUTO_LOCK_MS = 5 * 60 * 1000;
 const AUTO_LOCK_ALARM = "pm_auto_lock";
 const LAST_ACTIVITY_KEY = "password-manager-last-activity";
+const DEFAULT_CREDENTIALS_KEY = "password-manager-default-credentials";
+const PENDING_SAVE_KEY = "password-manager-pending-save";
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -38,6 +40,20 @@ function storageSessionSet(key, value) {
 function storageSessionRemove(keys) {
   return new Promise((resolve) => {
     chrome.storage.session.remove(keys, () => resolve());
+  });
+}
+
+function storageLocalGet(key) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(key, (result) => {
+      resolve(result?.[key] ?? null);
+    });
+  });
+}
+
+function storageLocalSet(key, value) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [key]: value }, () => resolve());
   });
 }
 
@@ -226,6 +242,29 @@ async function decryptCredentialPayload(ciphertextBase64, ivBase64) {
   return { username, password };
 }
 
+function normalizeUsername(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
+}
+
+function usernamesEqual(a, b) {
+  const left = normalizeUsername(a).toLowerCase();
+  const right = normalizeUsername(b).toLowerCase();
+  if (!left || !right) return false;
+  return left === right;
+}
+
+function maskUsername(value) {
+  const username = normalizeUsername(value);
+  return username || "(no username)";
+}
+
+function coerceString(value) {
+  return typeof value === "string" ? value : "";
+}
+
 function computeBaseDomain(hostname) {
   if (typeof hostname !== "string") {
     return null;
@@ -248,6 +287,106 @@ async function encryptCredentialPayload(username, password) {
   return { ciphertext: ciphertextBase64, iv: ivBase64 };
 }
 
+async function decryptCredentialRecord(cred) {
+  const id = typeof cred?.id === "string" ? cred.id : "";
+  const domain = typeof cred?.domain === "string" ? cred.domain : "";
+  const ciphertext = typeof cred?.ciphertext === "string" ? cred.ciphertext : "";
+  const iv = typeof cred?.iv === "string" ? cred.iv : "";
+  if (!id || !ciphertext || !iv) {
+    return null;
+  }
+
+  const decrypted = await decryptCredentialPayload(ciphertext, iv);
+  return {
+    id,
+    domain,
+    ciphertext,
+    iv,
+    createdAt: cred?.createdAt,
+    decrypted,
+  };
+}
+
+async function listCredentialRecordsForHostname(token, hostname) {
+  let credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(hostname)}`, token);
+  if (!Array.isArray(credentials) || credentials.length === 0) {
+    const base = computeBaseDomain(hostname);
+    if (base && base !== hostname) {
+      credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(base)}`, token);
+    }
+  }
+
+  if (!Array.isArray(credentials)) {
+    return [];
+  }
+
+  const out = [];
+  for (const cred of credentials) {
+    try {
+      const record = await decryptCredentialRecord(cred);
+      if (record) out.push(record);
+    } catch {
+      // Skip records that cannot be decrypted with the current vault key.
+    }
+  }
+  return out;
+}
+
+function summarizeCredential(record, defaultCredentialId) {
+  return {
+    id: record.id,
+    domain: record.domain,
+    username: record.decrypted?.username || "",
+    usernameLabel: maskUsername(record.decrypted?.username),
+    createdAt: record.createdAt,
+    isDefault: !!defaultCredentialId && record.id === defaultCredentialId,
+  };
+}
+
+async function getDefaultCredentialId(hostname) {
+  const defaults = (await storageLocalGet(DEFAULT_CREDENTIALS_KEY)) || {};
+  const base = computeBaseDomain(hostname);
+  return defaults?.[hostname] || (base ? defaults?.[base] : null) || null;
+}
+
+async function setDefaultCredentialId(hostname, credentialId) {
+  const defaults = (await storageLocalGet(DEFAULT_CREDENTIALS_KEY)) || {};
+  const base = computeBaseDomain(hostname);
+  defaults[hostname] = credentialId;
+  if (base) defaults[base] = credentialId;
+  await storageLocalSet(DEFAULT_CREDENTIALS_KEY, defaults);
+}
+
+async function updateCredential(token, id, username, password) {
+  const { ciphertext, iv } = await encryptCredentialPayload(username, password);
+  await apiRequest(`/credentials/${encodeURIComponent(id)}`, token, {
+    method: "PUT",
+    body: JSON.stringify({ ciphertext, iv }),
+  });
+}
+
+async function createCredential(token, domain, username, password) {
+  const { ciphertext, iv } = await encryptCredentialPayload(username, password);
+  return apiRequest("/credentials", token, {
+    method: "POST",
+    body: JSON.stringify({ domain, ciphertext, iv }),
+  });
+}
+
+async function openSavePrompt(pending) {
+  await storageSessionSet(PENDING_SAVE_KEY, pending);
+  const url = chrome.runtime.getURL("public/save-prompt.html");
+  if (chrome.windows && typeof chrome.windows.create === "function") {
+    chrome.windows.create({
+      url,
+      type: "popup",
+      width: 430,
+      height: 620,
+      focused: true,
+    });
+  }
+}
+
 function sendMessageToTab(tabId, message) {
   return new Promise((resolve) => {
     try {
@@ -262,6 +401,59 @@ function sendMessageToTab(tabId, message) {
       resolve({ ok: false, error: error instanceof Error ? error.message : "Unable to message tab" });
     }
   });
+}
+
+function getTabFrames(tabId) {
+  if (!chrome.webNavigation || typeof chrome.webNavigation.getAllFrames !== "function") {
+    return Promise.resolve([]);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
+        if (chrome.runtime.lastError) {
+          resolve([]);
+          return;
+        }
+        resolve(Array.isArray(frames) ? frames : []);
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function sendMessageToTabFrames(tabId, message) {
+  const mainResponse = await sendMessageToTab(tabId, message);
+  if (mainResponse?.ok) {
+    return mainResponse;
+  }
+
+  const frames = await getTabFrames(tabId);
+  for (const frame of frames) {
+    const frameId = typeof frame?.frameId === "number" ? frame.frameId : null;
+    if (frameId === null || frameId === 0) continue;
+
+    const response = await new Promise((resolve) => {
+      try {
+        chrome.tabs.sendMessage(tabId, message, { frameId }, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve(resp ?? { ok: true });
+        });
+      } catch (error) {
+        resolve({ ok: false, error: error instanceof Error ? error.message : "Unable to message frame" });
+      }
+    });
+
+    if (response?.ok) {
+      return response;
+    }
+  }
+
+  return mainResponse;
 }
 
 function isInjectableUrl(url) {
@@ -281,7 +473,7 @@ function injectContentScript(tabId, url) {
     try {
       chrome.scripting.executeScript(
         {
-          target: { tabId },
+          target: { tabId, allFrames: true },
           files: ["src/content/index.js"],
         },
         () => {
@@ -454,32 +646,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error("Invalid tab url");
         }
 
-        let credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(hostname)}`, token);
-        if (!Array.isArray(credentials) || credentials.length === 0) {
-          const base = computeBaseDomain(hostname);
-          if (base && base !== hostname) {
-            credentials = await apiRequest(`/credentials/domain/${encodeURIComponent(base)}`, token);
-          }
-        }
+        const credentials = await listCredentialRecordsForHostname(token, hostname);
 
         if (!Array.isArray(credentials) || credentials.length === 0) {
           throw new Error("No saved credential for this domain");
         }
 
+        const defaultCredentialId = await getDefaultCredentialId(hostname);
         const selected = credentialId
           ? credentials.find((c) => c && typeof c.id === "string" && c.id === credentialId)
-          : credentials[0];
+          : credentials.find((c) => c && c.id === defaultCredentialId);
 
         const first = selected || credentials[0];
-        const ciphertext = typeof first?.ciphertext === "string" ? first.ciphertext : "";
-        const iv = typeof first?.iv === "string" ? first.iv : "";
-        if (!ciphertext || !iv) {
-          throw new Error("Stored credential is missing ciphertext/iv");
-        }
+        const username = first.decrypted?.username || "";
+        const password = first.decrypted?.password || "";
+        if (!password) throw new Error("Stored credential is missing a password");
 
-        const { username, password } = await decryptCredentialPayload(ciphertext, iv);
-
-        let fillResp = await sendMessageToTab(tabId, {
+        let fillResp = await sendMessageToTabFrames(tabId, {
           type: "FILL_CREDENTIALS",
           username,
           password,
@@ -493,7 +676,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (looksLikeMissingReceiver) {
             const injectResp = await injectContentScript(tabId, url);
             if (injectResp?.ok) {
-              fillResp = await sendMessageToTab(tabId, {
+              fillResp = await sendMessageToTabFrames(tabId, {
                 type: "FILL_CREDENTIALS",
                 username,
                 password,
@@ -516,10 +699,212 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "LIST_CREDENTIALS_FOR_DOMAIN") {
+    const hostname = coerceString(message.hostname);
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+        const records = await listCredentialRecordsForHostname(token, hostname);
+        const defaultCredentialId = await getDefaultCredentialId(hostname);
+        await touchActivity();
+        sendResponse?.({
+          ok: true,
+          credentials: records.map((record) => summarizeCredential(record, defaultCredentialId)),
+        });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to load credentials" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "UPDATE_CREDENTIAL") {
+    const id = coerceString(message.id);
+    const username = coerceString(message.username);
+    const password = coerceString(message.password);
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    if (!id || !password) {
+      sendResponse?.({ ok: false, error: "Missing credential id or password" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+        await updateCredential(token, id, username, password);
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to update credential" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "GET_CREDENTIAL_FOR_EDIT") {
+    const hostname = coerceString(message.hostname);
+    const id = coerceString(message.id);
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    if (!hostname || !id) {
+      sendResponse?.({ ok: false, error: "Missing hostname or credential id" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+        const records = await listCredentialRecordsForHostname(token, hostname);
+        const record = records.find((item) => item.id === id);
+        if (!record) throw new Error("Credential not found");
+        await touchActivity();
+        sendResponse?.({
+          ok: true,
+          credential: {
+            id: record.id,
+            domain: record.domain,
+            username: record.decrypted?.username || "",
+            password: record.decrypted?.password || "",
+          },
+        });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to load credential" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "DELETE_CREDENTIAL") {
+    const id = coerceString(message.id);
+
+    if (!id) {
+      sendResponse?.({ ok: false, error: "Missing credential id" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+        await apiRequest(`/credentials/${encodeURIComponent(id)}`, token, { method: "DELETE" });
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to delete credential" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "SET_DEFAULT_CREDENTIAL") {
+    const hostname = coerceString(message.hostname);
+    const id = coerceString(message.id);
+
+    if (!hostname || !id) {
+      sendResponse?.({ ok: false, error: "Missing hostname or credential id" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        await setDefaultCredentialId(hostname, id);
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to set default" });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "GET_PENDING_SAVE") {
+    void (async () => {
+      const pending = await storageSessionGet(PENDING_SAVE_KEY);
+      sendResponse?.({ ok: true, pending });
+    })();
+    return true;
+  }
+
+  if (message.type === "DISCARD_PENDING_SAVE") {
+    void storageSessionRemove(PENDING_SAVE_KEY).then(() => sendResponse?.({ ok: true }));
+    return true;
+  }
+
+  if (message.type === "RESOLVE_PENDING_SAVE") {
+    const action = coerceString(message.action);
+    const targetId = coerceString(message.targetId);
+    const username = coerceString(message.username);
+    const password = coerceString(message.password);
+
+    if (!derivedKey) {
+      sendResponse?.({ ok: false, error: "Vault is locked" });
+      return true;
+    }
+
+    if (!password || !["create", "update"].includes(action)) {
+      sendResponse?.({ ok: false, error: "Choose a save action and enter a password" });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        const pending = await storageSessionGet(PENDING_SAVE_KEY);
+        if (!pending?.hostname) throw new Error("No pending save request");
+
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in");
+
+        if (action === "update") {
+          const id = targetId || pending?.suggestedTargetId || "";
+          if (!id) throw new Error("Choose the credential to update");
+          await updateCredential(token, id, username, password);
+          if (message.makeDefault) await setDefaultCredentialId(pending.hostname, id);
+        } else {
+          const created = await createCredential(token, pending.hostname, username, password);
+          if (message.makeDefault && created?.id) await setDefaultCredentialId(pending.hostname, created.id);
+        }
+
+        await storageSessionRemove(PENDING_SAVE_KEY);
+        await touchActivity();
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Unable to save credential" });
+      }
+    })();
+
+    return true;
+  }
+
   if (message.type === "SAVE_CREDENTIALS") {
     const url = message.url;
-    const username = typeof message.username === "string" ? message.username : "";
-    const password = typeof message.password === "string" ? message.password : "";
+    const mode = typeof message.mode === "string" ? message.mode : "login";
+    const username = coerceString(message.username);
+    const password = coerceString(message.password);
+    const currentPassword = coerceString(message.currentPassword);
+    const newPassword = coerceString(message.newPassword);
 
     if (!derivedKey) {
       sendResponse?.({ ok: false, error: "Vault is locked" });
@@ -531,9 +916,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
-    if (!password) {
-      sendResponse?.({ ok: false, error: "Missing password" });
-      return true;
+    if (mode === "login") {
+      if (!password) {
+        sendResponse?.({ ok: false, error: "Missing password" });
+        return true;
+      }
+    } else if (mode === "changePassword") {
+      if (!currentPassword || !newPassword) {
+        sendResponse?.({ ok: false, error: "Missing password change fields" });
+        return true;
+      }
     }
 
     void (async () => {
@@ -550,14 +942,97 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error("Invalid url");
         }
 
-        const { ciphertext, iv } = await encryptCredentialPayload(username, password);
-        await apiRequest("/credentials", token, {
-          method: "POST",
-          body: JSON.stringify({ domain: hostname, ciphertext, iv }),
+        const decryptedExisting = await listCredentialRecordsForHostname(token, hostname);
+        const defaultCredentialId = await getDefaultCredentialId(hostname);
+
+        if (mode === "changePassword") {
+          if (newPassword === currentPassword) {
+            sendResponse?.({ ok: true, action: "skipped" });
+            return;
+          }
+
+          const match = (() => {
+            if (username) {
+              return (
+                decryptedExisting.find(
+                  (c) => usernamesEqual(c.decrypted?.username, username) && c.decrypted?.password === currentPassword
+                ) || null
+              );
+            }
+
+            const matches = decryptedExisting.filter((c) => c.decrypted?.password === currentPassword);
+            return matches.length === 1 ? matches[0] : null;
+          })();
+
+          if (!match) {
+            throw new Error("No matching credential found to update");
+          }
+
+          const finalUsername = username || match.decrypted?.username || "";
+          await openSavePrompt({
+            id: crypto.randomUUID(),
+            hostname,
+            url,
+            mode,
+            username: finalUsername,
+            password: newPassword,
+            currentPassword,
+            suggestedAction: "update",
+            suggestedTargetId: match.id,
+            reason: "Password change detected",
+            existing: decryptedExisting.map((record) => summarizeCredential(record, defaultCredentialId)),
+            createdAt: Date.now(),
+          });
+          await touchActivity();
+          sendResponse?.({ ok: true, action: "prompted" });
+          return;
+        }
+
+        // mode === "login"
+        const normalizedIncomingUser = normalizeUsername(username);
+
+        const exactDuplicate = decryptedExisting.find((c) => {
+          const samePass = c.decrypted?.password === password;
+          if (!samePass) return false;
+          if (normalizedIncomingUser) {
+            return usernamesEqual(c.decrypted?.username, normalizedIncomingUser);
+          }
+          // No username: treat as duplicate only if the stored username is also empty.
+          return !normalizeUsername(c.decrypted?.username);
+        });
+
+        if (exactDuplicate) {
+          await touchActivity();
+          sendResponse?.({ ok: true, action: "skipped" });
+          return;
+        }
+
+        let updateTarget = null;
+        if (normalizedIncomingUser) {
+          updateTarget = decryptedExisting.find((c) => usernamesEqual(c.decrypted?.username, normalizedIncomingUser)) || null;
+        } else {
+          // If username is missing and there is exactly one credential for this domain, update it.
+          if (decryptedExisting.length === 1) {
+            updateTarget = decryptedExisting[0];
+          }
+        }
+
+        await openSavePrompt({
+          id: crypto.randomUUID(),
+          hostname,
+          url,
+          mode,
+          username: normalizedIncomingUser || username,
+          password,
+          suggestedAction: updateTarget ? "update" : "create",
+          suggestedTargetId: updateTarget?.id || "",
+          reason: updateTarget ? "Saved username already exists for this site" : "New login detected",
+          existing: decryptedExisting.map((record) => summarizeCredential(record, defaultCredentialId)),
+          createdAt: Date.now(),
         });
 
         await touchActivity();
-        sendResponse?.({ ok: true });
+        sendResponse?.({ ok: true, action: "prompted" });
       } catch (error) {
         sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Save failed" });
       }

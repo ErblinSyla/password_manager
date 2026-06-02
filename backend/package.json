@@ -19,7 +19,8 @@
     "express": "^4.21.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "tldts": "^7.4.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

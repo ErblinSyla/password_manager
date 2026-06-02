@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
+import { extractHostname, normalizeDomain } from "../lib/domain";
 
 const router = Router();
 
@@ -16,10 +17,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const normalized = normalizeDomain(domain);
+    if (!normalized) {
+      res.status(400).json({ error: "domain është i pavlefshëm" });
+      return;
+    }
+
     const credential = await prisma.credential.create({
       data: {
         userId: req.userId as string,
-        domain,
+        domain: normalized,
         ciphertext,
         iv,
       },
@@ -50,11 +57,22 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 // GET /api/credentials/domain/:domain — merr kredencialet për një domain
 router.get("/domain/:domain", async (req: AuthRequest, res: Response) => {
   try {
+    const rawHostname = extractHostname(req.params.domain);
+    const normalized = normalizeDomain(req.params.domain);
+
+    if (!rawHostname && !normalized) {
+      res.json([]);
+      return;
+    }
+
+    const candidates = Array.from(new Set([rawHostname, normalized].filter(Boolean))) as string[];
+
     const credentials = await prisma.credential.findMany({
       where: {
         userId: req.userId as string,
-        domain: { contains: req.params.domain },
+        domain: { in: candidates },
       },
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(credentials);
@@ -78,9 +96,28 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const data: { domain?: string; ciphertext?: string; iv?: string } = {};
+
+    if (typeof domain !== "undefined") {
+      const normalized = normalizeDomain(domain);
+      if (!normalized) {
+        res.status(400).json({ error: "domain është i pavlefshëm" });
+        return;
+      }
+      data.domain = normalized;
+    }
+
+    if (typeof ciphertext !== "undefined") {
+      data.ciphertext = ciphertext;
+    }
+
+    if (typeof iv !== "undefined") {
+      data.iv = iv;
+    }
+
     const updated = await prisma.credential.update({
       where: { id: req.params.id },
-      data: { domain, ciphertext, iv },
+      data,
     });
 
     res.json(updated);

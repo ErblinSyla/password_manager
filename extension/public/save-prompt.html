@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Save password</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script defer src="save-prompt.js"></script>
+  </head>
+  <body>
+    <div class="shell save-shell">
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Save password</p>
+            <h2 id="save-title">Review before saving</h2>
+          </div>
+          <span class="pill" id="save-domain">-</span>
+        </div>
+
+        <form class="auth-form save-form" id="save-form">
+          <label>
+            Username
+            <input id="save-username" name="username" autocomplete="username" />
+          </label>
+          <label>
+            Password
+            <input id="save-password" name="password" type="password" autocomplete="current-password" />
+          </label>
+
+          <fieldset class="save-options">
+            <legend>Save as</legend>
+            <label class="radio-row">
+              <input type="radio" name="action" value="update" />
+              <span>Update existing</span>
+            </label>
+            <select id="save-target"></select>
+            <label class="radio-row">
+              <input type="radio" name="action" value="create" />
+              <span>Create new credential</span>
+            </label>
+            <label class="radio-row">
+              <input id="save-default" type="checkbox" />
+              <span>Use as default for this domain</span>
+            </label>
+          </fieldset>
+
+          <p class="helper-text" id="save-reason"></p>
+          <p class="auth-feedback" id="save-feedback" aria-live="polite"></p>
+
+          <div class="save-actions">
+            <button class="secondary-button" type="button" id="save-cancel">Cancel</button>
+            <button class="primary-button" type="submit">Save</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </body>
+</html>

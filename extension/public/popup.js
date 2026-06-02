@@ -17,8 +17,22 @@ const savedCountLabel = document.getElementById("saved-count");
 const savedCountSubtitle = document.getElementById("saved-count-subtitle");
 const vaultList = document.getElementById("vault-list");
 const vaultPill = document.getElementById("vault-pill");
+const vaultSearchInput = document.getElementById("vault-search");
+const credentialEditor = document.getElementById("credential-editor");
+const credentialEditForm = document.getElementById("credential-edit-form");
+const editUsernameInput = document.getElementById("edit-username");
+const editPasswordInput = document.getElementById("edit-password");
+const editFeedback = document.getElementById("edit-feedback");
+const editCancelButton = document.getElementById("edit-cancel-button");
+const editRevealButton = document.getElementById("edit-reveal-button");
 
 let activeHostname = null;
+
+let lastVaultCredentials = [];
+let currentVaultToken = null;
+let editingCredentialId = null;
+let pendingDeleteId = null;
+let pendingDeleteUntil = 0;
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -148,7 +162,7 @@ function injectContentScript(tabId, url) {
     try {
       chrome.scripting.executeScript(
         {
-          target: { tabId },
+          target: { tabId, allFrames: true },
           files: ["src/content/index.js"],
         },
         () => {
@@ -211,7 +225,7 @@ function formatTimestamp(value) {
   return d.toLocaleString();
 }
 
-function renderVaultItems(credentials, { onFill } = {}) {
+function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } = {}) {
   if (!vaultList) {
     return;
   }
@@ -229,9 +243,10 @@ function renderVaultItems(credentials, { onFill } = {}) {
 
     const left = document.createElement("div");
     const title = document.createElement("strong");
-    title.textContent = String(cred?.domain || "(unknown)");
+    title.textContent = String(cred?.usernameLabel || cred?.username || "(no username)");
     const meta = document.createElement("p");
-    meta.textContent = cred?.createdAt ? `Saved ${formatTimestamp(cred.createdAt)}` : "Saved";
+    const defaultText = cred?.isDefault ? "Default. " : "";
+    meta.textContent = `${defaultText}${cred?.domain || "(unknown)"}${cred?.createdAt ? `, saved ${formatTimestamp(cred.createdAt)}` : ""}`;
     left.appendChild(title);
     left.appendChild(meta);
 
@@ -246,10 +261,53 @@ function renderVaultItems(credentials, { onFill } = {}) {
     });
 
     actions.appendChild(fillBtn);
+
+    if (typeof onEdit === "function") {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => {
+        onEdit?.(cred);
+      });
+      actions.appendChild(editBtn);
+    }
+
+    if (typeof onDefault === "function" && !cred?.isDefault) {
+      const defaultBtn = document.createElement("button");
+      defaultBtn.type = "button";
+      defaultBtn.textContent = "Default";
+      defaultBtn.addEventListener("click", () => {
+        onDefault?.(cred);
+      });
+      actions.appendChild(defaultBtn);
+    }
+
+    if (typeof onDelete === "function") {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      const isPendingDelete = pendingDeleteId === cred?.id && Date.now() < pendingDeleteUntil;
+      deleteBtn.textContent = isPendingDelete ? "Confirm" : "Delete";
+      deleteBtn.classList.toggle("danger-button", isPendingDelete);
+      deleteBtn.addEventListener("click", () => {
+        onDelete?.(cred);
+      });
+      actions.appendChild(deleteBtn);
+    }
     article.appendChild(left);
     article.appendChild(actions);
     vaultList.appendChild(article);
   }
+}
+
+function filterCredentials(credentials, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return credentials;
+
+  return credentials.filter((cred) => {
+    const domain = String(cred?.domain || "").toLowerCase();
+    const username = String(cred?.username || cred?.usernameLabel || "").toLowerCase();
+    return domain.includes(q) || username.includes(q);
+  });
 }
 
 function computeBaseDomain(hostname) {
@@ -267,11 +325,155 @@ async function fetchCredentialsForDomain(token, hostname) {
   if (!hostname) {
     return [];
   }
-  const encoded = encodeURIComponent(hostname);
-  return apiRequest(`/credentials/domain/${encoded}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const response = await sendMessage({ type: "LIST_CREDENTIALS_FOR_DOMAIN", hostname });
+  if (!response?.ok) {
+    throw new Error(response?.error || "Unable to load credentials.");
+  }
+  return Array.isArray(response.credentials) ? response.credentials : [];
+}
+
+async function deleteCredential(token, credentialId) {
+  if (!token || !credentialId) {
+    return;
+  }
+
+  const response = await sendMessage({ type: "DELETE_CREDENTIAL", id: credentialId });
+  if (!response?.ok) {
+    throw new Error(response?.error || "Unable to delete.");
+  }
+}
+
+async function handleVaultFill(cred) {
+  const tab = await queryActiveTab();
+  const tabId = typeof tab?.id === "number" ? tab.id : null;
+  const url = typeof tab?.url === "string" ? tab.url : null;
+
+  if (!tabId || !url) {
+    setStatus("Autofill failed", "No active tab detected.", true);
+    return;
+  }
+
+  const injectResp = await injectContentScript(tabId, url);
+  if (!injectResp?.ok && injectResp?.error) {
+    setStatus("Autofill failed", injectResp.error, true);
+    return;
+  }
+
+  const resp = await sendMessage({
+    type: "AUTOFILL_ACTIVE_TAB",
+    tabId,
+    url,
+    credentialId: cred?.id,
+  });
+
+  if (resp?.ok) {
+    setStatus("Autofill", "Credentials filled on the current page.");
+    reportActivity();
+  } else {
+    setStatus("Autofill failed", resp?.error || "Unable to autofill.", true);
+  }
+}
+
+async function handleVaultDelete(cred) {
+  try {
+    const token = currentVaultToken;
+    const id = String(cred?.id || "");
+    if (!token) {
+      setStatus("Delete failed", "Missing session token.", true);
+      return;
+    }
+    if (!id) {
+      setStatus("Delete failed", "Missing credential id.", true);
+      return;
+    }
+
+    const now = Date.now();
+    if (pendingDeleteId !== id || now >= pendingDeleteUntil) {
+      pendingDeleteId = id;
+      pendingDeleteUntil = now + 10_000;
+      setStatus("Confirm delete", "Click Confirm on the same credential to delete it.");
+      renderVaultItems(filterCredentials(lastVaultCredentials, vaultSearchInput?.value), {
+        onFill: handleVaultFill,
+        onEdit: handleVaultEdit,
+        onDelete: handleVaultDelete,
+        onDefault: handleVaultDefault,
+      });
+      return;
+    }
+
+    await deleteCredential(token, id);
+    pendingDeleteId = null;
+    pendingDeleteUntil = 0;
+    setStatus("Deleted", "Credential removed from the vault.");
+    closeCredentialEditor();
+    await refreshVaultForActiveDomain();
+  } catch (error) {
+    setStatus("Delete failed", error instanceof Error ? error.message : "Unable to delete.", true);
+  }
+}
+
+async function handleVaultDefault(cred) {
+  const id = String(cred?.id || "");
+  if (!activeHostname || !id) {
+    setStatus("Default failed", "Missing active domain or credential id.", true);
+    return;
+  }
+
+  const response = await sendMessage({ type: "SET_DEFAULT_CREDENTIAL", hostname: activeHostname, id });
+  if (response?.ok) {
+    setStatus("Default updated", "This credential will be used first for the domain.");
+    await refreshVaultForActiveDomain();
+  } else {
+    setStatus("Default failed", response?.error || "Unable to set default.", true);
+  }
+}
+
+function setEditFeedback(message, isError = false) {
+  if (!editFeedback) return;
+  editFeedback.textContent = message || "";
+  editFeedback.classList.toggle("is-error", isError);
+}
+
+function openCredentialEditor({ id, username, password }) {
+  editingCredentialId = id;
+  if (editUsernameInput) editUsernameInput.value = username || "";
+  if (editPasswordInput) {
+    editPasswordInput.type = "password";
+    editPasswordInput.value = password || "";
+  }
+  if (editRevealButton) editRevealButton.textContent = "Show";
+  setEditFeedback("");
+  if (credentialEditor) credentialEditor.hidden = false;
+  editUsernameInput?.focus();
+}
+
+function closeCredentialEditor() {
+  editingCredentialId = null;
+  credentialEditForm?.reset();
+  if (editPasswordInput) editPasswordInput.type = "password";
+  if (editRevealButton) editRevealButton.textContent = "Show";
+  setEditFeedback("");
+  if (credentialEditor) credentialEditor.hidden = true;
+}
+
+async function handleVaultEdit(cred) {
+  const id = String(cred?.id || "");
+  if (!activeHostname || !id) {
+    setStatus("Edit failed", "Missing active domain or credential id.", true);
+    return;
+  }
+
+  const response = await sendMessage({ type: "GET_CREDENTIAL_FOR_EDIT", hostname: activeHostname, id });
+  if (!response?.ok) {
+    setStatus("Edit failed", response?.error || "Unable to load credential.", true);
+    return;
+  }
+
+  const current = response.credential || {};
+  openCredentialEditor({
+    id,
+    username: current.username || "",
+    password: current.password || "",
   });
 }
 
@@ -280,11 +482,15 @@ async function refreshVaultForActiveDomain() {
   const token = session?.token;
 
   if (!token) {
+    currentVaultToken = null;
+    closeCredentialEditor();
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
     if (vaultList) vaultList.innerHTML = "";
     return;
   }
+
+  currentVaultToken = token;
 
   if (!activeHostname) {
     setSavedCount(null, "For this site");
@@ -309,37 +515,14 @@ async function refreshVaultForActiveDomain() {
     setSavedCount(count, subtitle);
     if (vaultPill) vaultPill.textContent = "Live";
 
-    renderVaultItems(credentials, {
-      onFill: async (cred) => {
-        const tab = await queryActiveTab();
-        const tabId = typeof tab?.id === "number" ? tab.id : null;
-        const url = typeof tab?.url === "string" ? tab.url : null;
+    lastVaultCredentials = Array.isArray(credentials) ? credentials : [];
+    const filtered = filterCredentials(lastVaultCredentials, vaultSearchInput?.value);
 
-        if (!tabId || !url) {
-          setStatus("Autofill failed", "No active tab detected.", true);
-          return;
-        }
-
-        const injectResp = await injectContentScript(tabId, url);
-        if (!injectResp?.ok && injectResp?.error) {
-          setStatus("Autofill failed", injectResp.error, true);
-          return;
-        }
-
-        const resp = await sendMessage({
-          type: "AUTOFILL_ACTIVE_TAB",
-          tabId,
-          url,
-          credentialId: cred?.id,
-        });
-
-        if (resp?.ok) {
-          setStatus("Autofill", "Credentials filled on the current page.");
-          reportActivity();
-        } else {
-          setStatus("Autofill failed", resp?.error || "Unable to autofill.", true);
-        }
-      },
+    renderVaultItems(filtered, {
+      onFill: handleVaultFill,
+      onEdit: handleVaultEdit,
+      onDelete: handleVaultDelete,
+      onDefault: handleVaultDefault,
     });
   } catch (error) {
     setSavedCount(null, "For this site");
@@ -347,6 +530,59 @@ async function refreshVaultForActiveDomain() {
     clearVaultList(error instanceof Error ? error.message : "Unable to load credentials.");
   }
 }
+
+vaultSearchInput?.addEventListener("input", () => {
+  const filtered = filterCredentials(lastVaultCredentials, vaultSearchInput.value);
+  renderVaultItems(filtered, {
+    onFill: handleVaultFill,
+    onEdit: handleVaultEdit,
+    onDelete: handleVaultDelete,
+    onDefault: handleVaultDefault,
+  });
+});
+
+editCancelButton?.addEventListener("click", () => {
+  closeCredentialEditor();
+});
+
+editRevealButton?.addEventListener("click", () => {
+  if (!editPasswordInput || !editRevealButton) return;
+  const showing = editPasswordInput.type === "text";
+  editPasswordInput.type = showing ? "password" : "text";
+  editRevealButton.textContent = showing ? "Show" : "Hide";
+});
+
+credentialEditForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (!editingCredentialId) {
+    setEditFeedback("No credential selected.", true);
+    return;
+  }
+
+  const username = editUsernameInput?.value?.trim() || "";
+  const password = editPasswordInput?.value || "";
+  if (!password) {
+    setEditFeedback("Password is required.", true);
+    return;
+  }
+
+  setEditFeedback("Saving...");
+  const update = await sendMessage({
+    type: "UPDATE_CREDENTIAL",
+    id: editingCredentialId,
+    username,
+    password,
+  });
+
+  if (update?.ok) {
+    setStatus("Credential updated", "Saved changes to the vault.");
+    closeCredentialEditor();
+    await refreshVaultForActiveDomain();
+  } else {
+    setEditFeedback(update?.error || "Unable to update credential.", true);
+  }
+});
 
 async function refreshActiveTabAutofillState() {
   if (!hasChromeRuntime()) {
@@ -445,6 +681,7 @@ async function clearVaultKey() {
 }
 
 async function signOut({ title, message, isError = false } = {}) {
+  closeCredentialEditor();
   await clearVaultKey();
   await clearSession();
   signInForm?.reset();
@@ -496,6 +733,7 @@ async function refreshSessionState() {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
     if (vaultList) vaultList.innerHTML = "";
+    closeCredentialEditor();
     return;
   }
 
@@ -516,6 +754,7 @@ async function refreshSessionState() {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
     if (vaultList) vaultList.innerHTML = "";
+    closeCredentialEditor();
   }
 
   try {
@@ -677,6 +916,7 @@ signInForm?.addEventListener("submit", handleSignIn);
 registerForm?.addEventListener("submit", handleRegister);
 
 lockButton?.addEventListener("click", async () => {
+  closeCredentialEditor();
   await clearVaultKey();
   setStatus("Vault locked", "Vault locked. Unlock to view passwords.");
   setViewState({ isAuthed: true, isUnlocked: false });

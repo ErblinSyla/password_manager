@@ -73,7 +73,7 @@
               <input type="password" name="password" placeholder="••••••••" />
             </label>
             <button class="primary-button" type="submit">Log in</button>
-            <p class="helper-text">Use this area for the auth flow once the backend is connected.</p>
+            <p class="helper-text">Sign in to unlock and manage your saved credentials.</p>
           </form>
 
           <form class="auth-form" data-panel="create-account" hidden>
@@ -90,7 +90,7 @@
               <input type="password" name="confirm-password" placeholder="Repeat password" />
             </label>
             <button class="primary-button" type="submit">Create account</button>
-            <p class="helper-text">This is a layout-only placeholder for the onboarding flow.</p>
+            <p class="helper-text">Your master password is used locally to encrypt saved credentials.</p>
           </form>
         </div>
       </section>
@@ -141,7 +141,37 @@
           <span class="pill" id="vault-pill">Live</span>
         </div>
 
+        <label class="vault-search" for="vault-search" aria-label="Search saved credentials">
+          <input id="vault-search" type="search" placeholder="Search this site's saved credentials" autocomplete="off" />
+        </label>
+
         <div class="vault-list" id="vault-list" aria-live="polite"></div>
+      </section>
+
+      <section class="panel edit-panel" id="credential-editor" hidden>
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Credential</p>
+            <h2>Edit saved login</h2>
+          </div>
+          <button class="secondary-button" type="button" id="edit-cancel-button">Cancel</button>
+        </div>
+
+        <form class="auth-form" id="credential-edit-form">
+          <label>
+            Username
+            <input id="edit-username" name="edit-username" autocomplete="username" />
+          </label>
+          <label>
+            Password
+            <input id="edit-password" name="edit-password" type="password" autocomplete="current-password" />
+          </label>
+          <div class="edit-actions">
+            <button class="secondary-button" type="button" id="edit-reveal-button">Show</button>
+            <button class="primary-button" type="submit">Save changes</button>
+          </div>
+          <p class="auth-feedback" id="edit-feedback" aria-live="polite"></p>
+        </form>
       </section>
     </div>
   </body>

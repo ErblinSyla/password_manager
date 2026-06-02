@@ -319,6 +319,26 @@ input {
   margin-top: 14px;
 }
 
+.vault-search {
+  display: block;
+  margin-top: 14px;
+}
+
+.vault-search input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  outline: none;
+}
+
+.vault-search input:focus {
+  border-color: rgba(15, 118, 110, 0.45);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
 .vault-empty {
   margin: 0;
   padding: 14px;
@@ -355,6 +375,78 @@ input {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   font-size: 0.8rem;
+}
+
+.save-shell {
+  min-width: 360px;
+}
+
+.save-form {
+  margin-top: 16px;
+}
+
+.save-options {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.save-options legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.radio-row {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 8px !important;
+  font-size: 0.86rem !important;
+  font-weight: 700;
+}
+
+.radio-row input {
+  width: auto;
+}
+
+.save-options select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+}
+
+.save-options select:disabled {
+  opacity: 0.62;
+}
+
+.save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.edit-panel {
+  border-color: rgba(15, 118, 110, 0.24);
+  background: var(--surface-strong);
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.danger-button {
+  color: #b42318 !important;
 }
 
 @media (max-width: 430px) {
