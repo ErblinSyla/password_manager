@@ -473,3 +473,211 @@ input {
     flex: 1;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PASTE THESE RULES INTO YOUR EXISTING popup.css
+   They add styling for:
+     1. .input-with-action  — wraps an <input> + inline button (Generate)
+     2. .inline-action-button — the small button that sits inside the row
+     3. .generator-panel    — the collapsible generator widget
+     4. .toggle-label       — checkbox rows inside the generator
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Input row with an inline action button ---------------------------------- */
+.input-with-action {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.input-with-action input {
+  flex: 1;
+  /* keep whatever border/padding your existing inputs use */
+  min-width: 0; /* prevent overflow in flex context */
+}
+
+/* 2. Small inline button (Generate / Copy) ----------------------------------- */
+.inline-action-button {
+  flex-shrink: 0;
+  padding: 0 10px;
+  height: 36px;           /* match your existing input height */
+  border-radius: 6px;
+  border: 1px solid var(--border, #d1d5db);
+  background: var(--surface-2, #f3f4f6);
+  color: var(--text, #111827);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.inline-action-button:hover {
+  background: var(--surface-3, #e5e7eb);
+  border-color: var(--border-strong, #9ca3af);
+}
+
+.inline-action-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 3. Generator panel --------------------------------------------------------- */
+.generator-panel {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 10px;
+  background: var(--surface-2, #f9fafb);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.generator-panel.is-standalone {
+  /* inside its own <section> it doesn't need its own card look */
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+/* Generated password preview row */
+.generator-output-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generator-preview {
+  flex: 1;
+  font-family: "Menlo", "Consolas", "Courier New", monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  padding: 8px 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 6px;
+  color: var(--text, #111827);
+  letter-spacing: 0.03em;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+/* Length slider row */
+.generator-slider-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted, #6b7280);
+  font-weight: 500;
+}
+
+.generator-slider-label strong {
+  color: var(--text, #111827);
+}
+
+.generator-slider-label input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent, #4f46e5);
+  cursor: pointer;
+}
+
+/* Checkbox toggles */
+.generator-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.generator-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text, #111827);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-label input[type="checkbox"] {
+  accent-color: var(--accent, #4f46e5);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+/* Generator action buttons row */
+.generator-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.generator-actions .secondary-button,
+.generator-actions .primary-button {
+  flex: 1;
+}
+
+/* 4. Password strength meter ------------------------------------------------- */
+.strength-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.strength-segments {
+  display: flex;
+  gap: 5px;
+}
+
+.strength-seg {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line, rgba(31, 41, 51, 0.12));
+  transition: background 0.25s ease;
+}
+
+.strength-seg.is-active {
+  /* colour is set inline by JS — transition handles the animation */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.strength-label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  /* colour set inline by JS to match segment colour */
+  transition: color 0.2s ease;
+}
+
+/* Disabled confirm input — soften it visually */
+#confirm-password:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Disabled register submit button */
+#register-submit-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* 5. Vault item — extra copy buttons ---------------------------------------- */
+/*
+   Your .vault-item-actions already uses flex. The two new "Copy user" /
+   "Copy pass" buttons inherit the same button styling. If they look too wide,
+   add this rule:
+*/
+.vault-item-actions button {
+  white-space: nowrap;
+}

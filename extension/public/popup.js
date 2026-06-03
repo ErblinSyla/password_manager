@@ -27,10 +27,40 @@ const editFeedback = document.getElementById("edit-feedback");
 const editCancelButton = document.getElementById("edit-cancel-button");
 const editRevealButton = document.getElementById("edit-reveal-button");
 
+// ── Generator (edit panel) ────────────────────────────────────────────────────
+const editGenerateButton = document.getElementById("edit-generate-button");
+const generatorPanel = document.getElementById("generator-panel");
+const generatorPreview = document.getElementById("generator-preview");
+const generatorCopyButton = document.getElementById("generator-copy-button");
+const generatorLength = document.getElementById("generator-length");
+const generatorLengthValue = document.getElementById("generator-length-value");
+const generatorRefreshButton = document.getElementById("generator-refresh-button");
+const generatorUseButton = document.getElementById("generator-use-button");
+const genUppercase = document.getElementById("gen-uppercase");
+const genNumbers = document.getElementById("gen-numbers");
+const genSymbols = document.getElementById("gen-symbols");
+
+// ── Generator (register form) ─────────────────────────────────────────────────
+const registerGenerateButton = document.getElementById("register-generate-button");
+const registerPasswordInput = document.getElementById("register-password");
+const confirmPasswordInput = document.getElementById("confirm-password");
+
+// ── Standalone generator panel ────────────────────────────────────────────────
+const standaloneGeneratorPanel = document.getElementById("standalone-generator-panel");
+const standaloneGeneratorClose = document.getElementById("standalone-generator-close");
+const standaloneGeneratorPreview = document.getElementById("standalone-generator-preview");
+const standaloneGeneratorCopyButton = document.getElementById("standalone-generator-copy-button");
+const standaloneGeneratorLength = document.getElementById("standalone-generator-length");
+const standaloneGeneratorLengthValue = document.getElementById("standalone-generator-length-value");
+const standaloneGeneratorRefreshButton = document.getElementById("standalone-generator-refresh-button");
+const standaloneGenUppercase = document.getElementById("standalone-gen-uppercase");
+const standaloneGenNumbers = document.getElementById("standalone-gen-numbers");
+const standaloneGenSymbols = document.getElementById("standalone-gen-symbols");
+
 let activeHostname = null;
 
 let lastVaultCredentials = [];
-let showAllCredentials = false; // New state variable
+let showAllCredentials = false;
 let currentVaultToken = null;
 let editingCredentialId = null;
 let pendingDeleteId = null;
@@ -38,6 +68,326 @@ let pendingDeleteUntil = 0;
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASSWORD GENERATOR CORE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CHAR_SETS = {
+  lower:   "abcdefghijklmnopqrstuvwxyz",
+  upper:   "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  numbers: "0123456789",
+  symbols: "!@#$%^&*()-_=+[]{}|;:,.<>?",
+};
+
+/**
+ * Generates a cryptographically random password using the Web Crypto API.
+ * Always includes at least one character from each enabled set so the result
+ * satisfies common "must contain X" requirements.
+ *
+ * @param {object} opts
+ * @param {number}  opts.length    - Total character count (8–64)
+ * @param {boolean} opts.uppercase - Include A–Z
+ * @param {boolean} opts.numbers   - Include 0–9
+ * @param {boolean} opts.symbols   - Include symbols
+ * @returns {string} The generated password
+ */
+function generatePassword({ length = 20, uppercase = true, numbers = true, symbols = true } = {}) {
+  // Build the full alphabet and note required characters
+  let alphabet = CHAR_SETS.lower;
+  const required = [];
+
+  if (uppercase) {
+    alphabet += CHAR_SETS.upper;
+    required.push(pickRandom(CHAR_SETS.upper));
+  }
+  if (numbers) {
+    alphabet += CHAR_SETS.numbers;
+    required.push(pickRandom(CHAR_SETS.numbers));
+  }
+  if (symbols) {
+    alphabet += CHAR_SETS.symbols;
+    required.push(pickRandom(CHAR_SETS.symbols));
+  }
+
+  // Always require at least one lowercase
+  required.push(pickRandom(CHAR_SETS.lower));
+
+  // Fill the rest randomly from the full alphabet
+  const remaining = length - required.length;
+  const chars = [...required];
+
+  for (let i = 0; i < remaining; i++) {
+    chars.push(pickRandom(alphabet));
+  }
+
+  // Shuffle using Fisher-Yates with crypto random values
+  shuffleArray(chars);
+  return chars.join("");
+}
+
+/** Picks a single cryptographically random character from a string. */
+function pickRandom(str) {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return str[array[0] % str.length];
+}
+
+/** Fisher-Yates shuffle using crypto random values (in-place). */
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const randomArr = new Uint32Array(1);
+    crypto.getRandomValues(randomArr);
+    const j = randomArr[0] % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+/**
+ * Copies text to clipboard and gives brief visual feedback on a button.
+ *
+ * @param {string} text     - Text to copy
+ * @param {HTMLButtonElement} button - Button to animate
+ */
+async function copyToClipboard(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    if (button) {
+      const original = button.textContent;
+      button.textContent = "Copied ✓";
+      button.disabled = true;
+      setTimeout(() => {
+        button.textContent = original;
+        button.disabled = false;
+      }, 1500);
+    }
+  } catch {
+    // Clipboard API may be unavailable on some extension pages; fail silently.
+  }
+}
+
+// ─── Edit-panel generator ─────────────────────────────────────────────────────
+
+/** Reads current options from the edit-panel generator controls and regenerates. */
+function refreshEditGenerator() {
+  if (!generatorPreview) return;
+  const pwd = generatePassword({
+    length: Number(generatorLength?.value ?? 20),
+    uppercase: genUppercase?.checked ?? true,
+    numbers: genNumbers?.checked ?? true,
+    symbols: genSymbols?.checked ?? true,
+  });
+  generatorPreview.textContent = pwd;
+}
+
+editGenerateButton?.addEventListener("click", () => {
+  if (!generatorPanel) return;
+  const isHidden = generatorPanel.hidden;
+  generatorPanel.hidden = !isHidden;
+  if (isHidden) {
+    refreshEditGenerator();
+    // Show the password so the user can see what they're about to use
+    if (editPasswordInput) editPasswordInput.type = "text";
+    if (editRevealButton) editRevealButton.textContent = "Hide";
+  }
+});
+
+generatorLength?.addEventListener("input", () => {
+  if (generatorLengthValue) generatorLengthValue.textContent = generatorLength.value;
+  refreshEditGenerator();
+});
+
+[genUppercase, genNumbers, genSymbols].forEach((checkbox) => {
+  checkbox?.addEventListener("change", refreshEditGenerator);
+});
+
+generatorRefreshButton?.addEventListener("click", refreshEditGenerator);
+
+generatorCopyButton?.addEventListener("click", () => {
+  copyToClipboard(generatorPreview?.textContent ?? "", generatorCopyButton);
+});
+
+generatorUseButton?.addEventListener("click", () => {
+  if (!editPasswordInput || !generatorPreview) return;
+  editPasswordInput.value = generatorPreview.textContent;
+  editPasswordInput.type = "text";
+  if (editRevealButton) editRevealButton.textContent = "Hide";
+  if (generatorPanel) generatorPanel.hidden = true;
+});
+
+// ─── Register-form generator (fills both password fields) ────────────────────
+
+registerGenerateButton?.addEventListener("click", () => {
+  const pwd = generatePassword({ length: 20, uppercase: true, numbers: true, symbols: true });
+  if (registerPasswordInput) {
+    registerPasswordInput.value = pwd;
+    registerPasswordInput.type = "text"; // Reveal so user can see/copy it
+  }
+  if (confirmPasswordInput) {
+    confirmPasswordInput.value = pwd;
+    confirmPasswordInput.type = "text";
+  }
+  // Copy to clipboard automatically — convenient for onboarding
+  copyToClipboard(pwd, registerGenerateButton);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASSWORD STRENGTH METER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const strengthMeter = document.getElementById("strength-meter");
+const strengthLabel = document.getElementById("strength-label");
+const strengthSegs = Array.from(document.querySelectorAll(".strength-seg"));
+const registerSubmitButton = document.getElementById("register-submit-button");
+
+/**
+ * Scores a password 0–4 using a set of heuristics.
+ *
+ * Score breakdown:
+ *   +1  length ≥ 10
+ *   +1  length ≥ 16
+ *   +1  contains both lower + upper case
+ *   +1  contains at least one digit
+ *   +1  contains at least one symbol
+ *   −1  very common patterns (keyboard walks, repeated chars)
+ *
+ * Result is clamped 0–4.
+ *
+ * @param {string} pwd
+ * @returns {{ score: number, label: string }}
+ */
+function scorePassword(pwd) {
+  if (!pwd) return { score: -1, label: "" };
+
+  let score = 0;
+
+  // Length bonuses
+  if (pwd.length >= 10) score++;
+  if (pwd.length >= 16) score++;
+
+  // Character variety
+  if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^a-zA-Z0-9]/.test(pwd)) score++;
+
+  // Penalty: very common patterns
+  const commonWalks = /^(qwerty|asdf|zxcv|1234|abcd|password|letmein|iloveyou)/i;
+  const repeatedChars = /(.)\1{3,}/; // same char 4+ times in a row
+  if (commonWalks.test(pwd) || repeatedChars.test(pwd)) score = Math.max(0, score - 1);
+
+  const clamped = Math.min(4, Math.max(0, score));
+  const labels = ["Weak", "Fair", "Good", "Strong", "Very strong"];
+
+  return { score: clamped, label: labels[clamped] };
+}
+
+// Score → visual config: how many segments to fill and what colour to use
+const STRENGTH_CONFIG = [
+  { filled: 1, color: "#dc2626" }, // Weak     — red
+  { filled: 2, color: "#d97706" }, // Fair     — amber
+  { filled: 3, color: "#ca8a04" }, // Good     — yellow-amber
+  { filled: 4, color: "#16a34a" }, // Strong   — green
+  { filled: 5, color: "#0f766e" }, // Very strong — accent teal
+];
+
+// Minimum score the user must reach before the confirm field + submit unlock
+const MIN_SCORE_TO_PROCEED = 2; // "Good"
+
+function applyStrengthUI(score) {
+  if (!strengthMeter || !strengthLabel || !strengthSegs.length) return;
+
+  const isEmpty = score === -1;
+  strengthMeter.hidden = isEmpty;
+
+  if (isEmpty) {
+    // Lock confirm + submit when field is blank
+    if (confirmPasswordInput) confirmPasswordInput.disabled = true;
+    if (registerSubmitButton) registerSubmitButton.disabled = true;
+    return;
+  }
+
+  const config = STRENGTH_CONFIG[score];
+
+  strengthSegs.forEach((seg, i) => {
+    const active = i < config.filled;
+    seg.style.background = active ? config.color : "";
+    seg.classList.toggle("is-active", active);
+  });
+
+  strengthLabel.textContent = STRENGTH_CONFIG[score]
+    ? `${STRENGTH_CONFIG[score - 0]?.color ? "" : ""}${scorePassword._lastLabel || ""}`
+    : "";
+
+  // Re-derive label text from the score index
+  const labelText = ["Weak", "Fair", "Good", "Strong", "Very strong"][score] ?? "";
+  strengthLabel.textContent = labelText;
+  strengthLabel.style.color =
+    score < MIN_SCORE_TO_PROCEED ? "#b45309" : score >= 3 ? "#0f766e" : "#1f2933";
+
+  // Gate confirm field and submit button on minimum strength
+  const canProceed = score >= MIN_SCORE_TO_PROCEED;
+  if (confirmPasswordInput) confirmPasswordInput.disabled = !canProceed;
+  if (registerSubmitButton) registerSubmitButton.disabled = !canProceed;
+}
+
+// Wire up: score on every keystroke in the register password input
+registerPasswordInput?.addEventListener("input", () => {
+  const pwd = registerPasswordInput.value;
+  const { score } = scorePassword(pwd);
+  applyStrengthUI(score);
+});
+
+// Also reset meter when the generate button fills the field
+// (We override the generate button handler defined earlier to also call applyStrengthUI)
+const _originalRegisterGenerateClick = registerGenerateButton?.onclick ?? null;
+registerGenerateButton?.addEventListener("click", () => {
+  // The generate handler already ran (event listeners fire in order).
+  // We just need to score whatever value ended up in the field.
+  const pwd = registerPasswordInput?.value ?? "";
+  const { score } = scorePassword(pwd);
+  applyStrengthUI(score);
+});
+
+// Initialise hidden on load
+if (strengthMeter) strengthMeter.hidden = true;
+
+// ─── Standalone generator panel ───────────────────────────────────────────────
+
+function refreshStandaloneGenerator() {
+  if (!standaloneGeneratorPreview) return;
+  const pwd = generatePassword({
+    length: Number(standaloneGeneratorLength?.value ?? 20),
+    uppercase: standaloneGenUppercase?.checked ?? true,
+    numbers: standaloneGenNumbers?.checked ?? true,
+    symbols: standaloneGenSymbols?.checked ?? true,
+  });
+  standaloneGeneratorPreview.textContent = pwd;
+}
+
+standaloneGeneratorLength?.addEventListener("input", () => {
+  if (standaloneGeneratorLengthValue) {
+    standaloneGeneratorLengthValue.textContent = standaloneGeneratorLength.value;
+  }
+  refreshStandaloneGenerator();
+});
+
+[standaloneGenUppercase, standaloneGenNumbers, standaloneGenSymbols].forEach((cb) => {
+  cb?.addEventListener("change", refreshStandaloneGenerator);
+});
+
+standaloneGeneratorRefreshButton?.addEventListener("click", refreshStandaloneGenerator);
+
+standaloneGeneratorCopyButton?.addEventListener("click", () => {
+  copyToClipboard(standaloneGeneratorPreview?.textContent ?? "", standaloneGeneratorCopyButton);
+});
+
+standaloneGeneratorClose?.addEventListener("click", () => {
+  if (standaloneGeneratorPanel) standaloneGeneratorPanel.hidden = true;
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXISTING POPUP LOGIC (unchanged except renderVaultItems — see below)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function hasChromeRuntime() {
   return typeof chrome !== "undefined" && !!chrome.runtime && typeof chrome.runtime.sendMessage === "function";
@@ -227,6 +577,10 @@ function formatTimestamp(value) {
   return d.toLocaleString();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// VAULT ITEM RENDERING — now includes Copy username / Copy password buttons
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } = {}) {
   if (!vaultList) {
     return;
@@ -243,6 +597,7 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
     const article = document.createElement("article");
     article.className = "vault-item";
 
+    // ── Left column: identity info ─────────────────────────────────────────
     const left = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = String(cred?.usernameLabel || cred?.username || "(no username)");
@@ -252,54 +607,103 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
     left.appendChild(title);
     left.appendChild(meta);
 
+    // ── Right column: action buttons ───────────────────────────────────────
     const actions = document.createElement("div");
     actions.className = "vault-item-actions";
 
+    // Fill button
     const fillBtn = document.createElement("button");
     fillBtn.type = "button";
     fillBtn.textContent = "Fill";
-    fillBtn.addEventListener("click", () => {
-      onFill?.(cred);
-    });
-
+    fillBtn.addEventListener("click", () => onFill?.(cred));
     actions.appendChild(fillBtn);
 
+    // ── NEW: Copy username button ──────────────────────────────────────────
+    const copyUserBtn = document.createElement("button");
+    copyUserBtn.type = "button";
+    copyUserBtn.textContent = "Copy user";
+    copyUserBtn.title = "Copy username to clipboard";
+    copyUserBtn.addEventListener("click", async () => {
+      const username = cred?.username || cred?.usernameLabel || "";
+      await copyToClipboard(username, copyUserBtn);
+    });
+    actions.appendChild(copyUserBtn);
+
+    // ── NEW: Copy password button ─────────────────────────────────────────
+    // We need the decrypted password — request it via GET_CREDENTIAL_FOR_EDIT
+    // which the background already exposes. We fetch on-demand (click) to
+    // avoid keeping plaintext in the DOM longer than necessary.
+    const copyPassBtn = document.createElement("button");
+    copyPassBtn.type = "button";
+    copyPassBtn.textContent = "Copy pass";
+    copyPassBtn.title = "Copy password to clipboard";
+    copyPassBtn.addEventListener("click", async () => {
+      copyPassBtn.textContent = "…";
+      copyPassBtn.disabled = true;
+
+      try {
+        const hostnameToFetch = showAllCredentials ? null : activeHostname;
+        const response = await sendMessage({
+          type: "GET_CREDENTIAL_FOR_EDIT",
+          hostname: hostnameToFetch,
+          id: String(cred?.id || ""),
+        });
+
+        if (!response?.ok) {
+          copyPassBtn.textContent = "Error";
+          setTimeout(() => {
+            copyPassBtn.textContent = "Copy pass";
+            copyPassBtn.disabled = false;
+          }, 1500);
+          return;
+        }
+
+        await copyToClipboard(response.credential?.password ?? "", copyPassBtn);
+      } catch {
+        copyPassBtn.textContent = "Copy pass";
+        copyPassBtn.disabled = false;
+      }
+    });
+    actions.appendChild(copyPassBtn);
+
+    // Edit button
     if (typeof onEdit === "function") {
       const editBtn = document.createElement("button");
       editBtn.type = "button";
       editBtn.textContent = "Edit";
-      editBtn.addEventListener("click", () => {
-        onEdit?.(cred);
-      });
+      editBtn.addEventListener("click", () => onEdit?.(cred));
       actions.appendChild(editBtn);
     }
 
+    // Default button
     if (typeof onDefault === "function" && !cred?.isDefault) {
       const defaultBtn = document.createElement("button");
       defaultBtn.type = "button";
       defaultBtn.textContent = "Default";
-      defaultBtn.addEventListener("click", () => {
-        onDefault?.(cred);
-      });
+      defaultBtn.addEventListener("click", () => onDefault?.(cred));
       actions.appendChild(defaultBtn);
     }
 
+    // Delete button
     if (typeof onDelete === "function") {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       const isPendingDelete = pendingDeleteId === cred?.id && Date.now() < pendingDeleteUntil;
       deleteBtn.textContent = isPendingDelete ? "Confirm" : "Delete";
       deleteBtn.classList.toggle("danger-button", isPendingDelete);
-      deleteBtn.addEventListener("click", () => {
-        onDelete?.(cred);
-      });
+      deleteBtn.addEventListener("click", () => onDelete?.(cred));
       actions.appendChild(deleteBtn);
     }
+
     article.appendChild(left);
     article.appendChild(actions);
     vaultList.appendChild(article);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REST OF EXISTING LOGIC — unchanged
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function filterCredentials(credentials, query) {
   const q = String(query || "").trim().toLowerCase();
@@ -446,6 +850,8 @@ function openCredentialEditor({ id, username, password }) {
     editPasswordInput.value = password || "";
   }
   if (editRevealButton) editRevealButton.textContent = "Show";
+  // Reset generator panel state whenever the editor opens
+  if (generatorPanel) generatorPanel.hidden = true;
   setEditFeedback("");
   if (credentialEditor) credentialEditor.hidden = false;
   editUsernameInput?.focus();
@@ -456,6 +862,7 @@ function closeCredentialEditor() {
   credentialEditForm?.reset();
   if (editPasswordInput) editPasswordInput.type = "password";
   if (editRevealButton) editRevealButton.textContent = "Show";
+  if (generatorPanel) generatorPanel.hidden = true;
   setEditFeedback("");
   if (credentialEditor) credentialEditor.hidden = true;
 }
@@ -483,7 +890,7 @@ async function handleVaultEdit(cred) {
   });
 }
 
-async function refreshVaultView() { // Renamed from refreshVaultForActiveDomain
+async function refreshVaultView() {
   const session = await readSession();
   const token = session?.token;
 
@@ -543,7 +950,7 @@ async function refreshVaultView() { // Renamed from refreshVaultForActiveDomain
       onDelete: handleVaultDelete,
       onDefault: handleVaultDefault,
     });
-  } catch (error) { // Catch errors from both fetchCredentialsForDomain and LIST_ALL_CREDENTIALS
+  } catch (error) {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "Error";
     clearVaultList(error instanceof Error ? error.message : "Unable to load credentials.");
@@ -557,7 +964,7 @@ vaultSearchInput?.addEventListener("input", () => {
     onEdit: handleVaultEdit,
     onDelete: handleVaultDelete,
     onDefault: handleVaultDefault,
-    }); // This will now filter from lastVaultCredentials which can contain all credentials
+  });
 });
 
 editCancelButton?.addEventListener("click", () => {
@@ -612,7 +1019,7 @@ async function refreshActiveTabAutofillState() {
   const tab = await queryActiveTab();
   const url = typeof tab?.url === "string" ? tab.url : null;
   const tabId = typeof tab?.id === "number" ? tab.id : null;
-  
+
   const domain = (() => {
     try {
       return url ? new URL(url).hostname : "-";
@@ -620,12 +1027,12 @@ async function refreshActiveTabAutofillState() {
       return "-";
     }
   })();
-  activeHostname = domain && domain !== "-" ? domain : null; // Update activeHostname here
+  activeHostname = domain && domain !== "-" ? domain : null;
 
   setDetectedSiteLabels({ url, fieldStatusText: "Checking page fields…" });
 
   if (!tabId) {
-    setDetectedSiteLabels({ url, fieldStatusText: "No active tab" }); // activeHostname is already null
+    setDetectedSiteLabels({ url, fieldStatusText: "No active tab" });
     return;
   }
 
@@ -659,7 +1066,6 @@ async function refreshActiveTabAutofillState() {
     setDetectedSiteLabels({ url, fieldStatusText: "No login fields detected" });
   }
 
-  // Ensure the vault list updates whenever tab state is refreshed
   await refreshVaultView();
 }
 
@@ -767,7 +1173,6 @@ async function refreshSessionState() {
     return;
   }
 
-  // In Vite preview there is no chrome.runtime, so treat it as "unlocked" for UI.
   let isUnlocked = !hasChromeRuntime();
 
   if (hasChromeRuntime()) {
@@ -1038,22 +1443,20 @@ autofillButton?.addEventListener("click", async () => {
 });
 
 refreshTabButton?.addEventListener("click", async () => {
-  // This will update activeHostname and then call refreshVaultView
   await refreshActiveTabAutofillState();
 });
 
 async function setVaultScope(scope) {
   showAllCredentials = (scope === "all");
-  
+
   vaultScopeButtons.forEach((btn) => {
     btn.classList.toggle("is-active", btn.dataset.vaultScope === scope);
   });
 
   if (vaultSearchInput) {
-    // Clear search when switching tabs for a fresh view
     vaultSearchInput.value = "";
-    vaultSearchInput.placeholder = showAllCredentials 
-      ? "Search all saved credentials" 
+    vaultSearchInput.placeholder = showAllCredentials
+      ? "Search all saved credentials"
       : "Search this site's saved credentials";
   }
 

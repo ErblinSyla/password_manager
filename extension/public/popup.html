@@ -84,13 +84,30 @@
             </label>
             <label>
               Master password
-              <input type="password" name="register-password" placeholder="Create a strong password" />
+              <!-- ↓ wrapper lets us position the Generate button inside the label row -->
+              <div class="input-with-action">
+                <input type="password" name="register-password" id="register-password" placeholder="Create a strong password" />
+                <button class="inline-action-button" type="button" id="register-generate-button" title="Generate strong password">Generate</button>
+              </div>
             </label>
+            <!-- ── Strength meter ──────────────────────────────────────── -->
+            <div class="strength-meter" id="strength-meter" aria-live="polite" aria-label="Password strength">
+              <div class="strength-segments">
+                <span class="strength-seg" data-seg="0"></span>
+                <span class="strength-seg" data-seg="1"></span>
+                <span class="strength-seg" data-seg="2"></span>
+                <span class="strength-seg" data-seg="3"></span>
+                <span class="strength-seg" data-seg="4"></span>
+              </div>
+              <p class="strength-label" id="strength-label"></p>
+            </div>
+            <!-- ────────────────────────────────────────────────────────── -->
+
             <label>
               Confirm password
-              <input type="password" name="confirm-password" placeholder="Repeat password" />
+              <input type="password" name="confirm-password" id="confirm-password" placeholder="Repeat password" disabled />
             </label>
-            <button class="primary-button" type="submit">Create account</button>
+            <button class="primary-button" type="submit" id="register-submit-button" disabled>Create account</button>
             <p class="helper-text">Your master password is used locally to encrypt saved credentials.</p>
           </form>
         </div>
@@ -169,8 +186,46 @@
           </label>
           <label>
             Password
-            <input id="edit-password" name="edit-password" type="password" autocomplete="current-password" />
+            <!-- ↓ same input-with-action pattern so Generate sits inline -->
+            <div class="input-with-action">
+              <input id="edit-password" name="edit-password" type="password" autocomplete="current-password" />
+              <button class="inline-action-button" type="button" id="edit-generate-button" title="Generate strong password">Generate</button>
+            </div>
           </label>
+
+          <!-- ─── Password Generator Panel ─────────────────────────────── -->
+          <div class="generator-panel" id="generator-panel" hidden>
+            <div class="generator-output-row">
+              <code class="generator-preview" id="generator-preview" aria-label="Generated password"></code>
+              <button class="inline-action-button" type="button" id="generator-copy-button" title="Copy generated password">Copy</button>
+            </div>
+
+            <div class="generator-controls">
+              <label class="generator-slider-label">
+                Length: <strong id="generator-length-value">20</strong>
+                <input type="range" id="generator-length" min="8" max="64" value="20" />
+              </label>
+
+              <div class="generator-toggles">
+                <label class="toggle-label">
+                  <input type="checkbox" id="gen-uppercase" checked /> Uppercase (A–Z)
+                </label>
+                <label class="toggle-label">
+                  <input type="checkbox" id="gen-numbers" checked /> Numbers (0–9)
+                </label>
+                <label class="toggle-label">
+                  <input type="checkbox" id="gen-symbols" checked /> Symbols (!@#…)
+                </label>
+              </div>
+            </div>
+
+            <div class="generator-actions">
+              <button class="secondary-button" type="button" id="generator-refresh-button">↺ Regenerate</button>
+              <button class="primary-button" type="button" id="generator-use-button">Use this password</button>
+            </div>
+          </div>
+          <!-- ─────────────────────────────────────────────────────────── -->
+
           <div class="edit-actions">
             <button class="secondary-button" type="button" id="edit-reveal-button">Show</button>
             <button class="primary-button" type="submit">Save changes</button>
@@ -178,6 +233,47 @@
           <p class="auth-feedback" id="edit-feedback" aria-live="polite"></p>
         </form>
       </section>
+
+      <!-- ─── Standalone Password Generator (accessible from vault items) ── -->
+      <section class="panel" id="standalone-generator-panel" hidden>
+        <div class="panel-header compact">
+          <div>
+            <p class="section-label">Utility</p>
+            <h2>Password generator</h2>
+          </div>
+          <button class="secondary-button" type="button" id="standalone-generator-close">Close</button>
+        </div>
+
+        <div class="generator-panel is-standalone">
+          <div class="generator-output-row">
+            <code class="generator-preview" id="standalone-generator-preview" aria-label="Generated password"></code>
+            <button class="inline-action-button" type="button" id="standalone-generator-copy-button" title="Copy generated password">Copy</button>
+          </div>
+
+          <div class="generator-controls">
+            <label class="generator-slider-label">
+              Length: <strong id="standalone-generator-length-value">20</strong>
+              <input type="range" id="standalone-generator-length" min="8" max="64" value="20" />
+            </label>
+
+            <div class="generator-toggles">
+              <label class="toggle-label">
+                <input type="checkbox" id="standalone-gen-uppercase" checked /> Uppercase (A–Z)
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="standalone-gen-numbers" checked /> Numbers (0–9)
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="standalone-gen-symbols" checked /> Symbols (!@#…)
+              </label>
+            </div>
+          </div>
+
+          <button class="secondary-button" type="button" id="standalone-generator-refresh-button" style="width:100%">↺ Regenerate</button>
+        </div>
+      </section>
+      <!-- ────────────────────────────────────────────────────────────────── -->
+
     </div>
   </body>
 </html>
