@@ -1,52 +1,65 @@
 :root {
   color-scheme: light;
-  --bg: #f4efe8;
-  --bg-strong: #eadcc8;
-  --surface: rgba(255, 255, 255, 0.86);
+
+  /* Background */
+  --bg:           #eef2f9;
+  --bg-strong:    #dde5f5;
+
+  /* Surfaces */
+  --surface:      rgba(255, 255, 255, 0.88);
+  --surface-2:    rgba(241, 245, 255, 0.92);
   --surface-strong: #ffffff;
-  --text: #1f2933;
-  --muted: #637381;
-  --line: rgba(31, 41, 51, 0.12);
-  --accent: #0f766e;
-  --accent-strong: #134e4a;
-  --accent-soft: rgba(15, 118, 110, 0.12);
-  --shadow: 0 20px 45px rgba(44, 62, 80, 0.12);
-  --radius: 20px;
+
+  /* Text */
+  --text:         #0f1b2d;
+  --muted:        #4a5878;
+
+  /* Borders */
+  --line:         rgba(15, 27, 45, 0.10);
+  --line-strong:  rgba(15, 27, 45, 0.22);
+
+  /* Brand blues */
+  --accent:       #2563eb;          /* royal blue — primary CTA */
+  --accent-mid:   #1d4ed8;          /* one shade darker */
+  --accent-strong:#1e3a8a;          /* deep navy */
+  --accent-soft:  rgba(37, 99, 235, 0.10);
+  --accent-glow:  rgba(37, 99, 235, 0.22);
+
+  /* Semantic */
+  --danger:       #dc2626;
+  --danger-soft:  rgba(220, 38, 38, 0.10);
+  --success:      #16a34a;
+
+  /* Misc */
+  --shadow:       0 16px 40px rgba(15, 27, 45, 0.13);
+  --shadow-sm:    0 4px 14px rgba(15, 27, 45, 0.09);
+  --radius:       18px;
 }
 
-* {
-  box-sizing: border-box;
-}
+/* ── Reset ──────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
 
-[hidden] {
-  display: none !important;
-}
+[hidden] { display: none !important; }
 
-html,
-body {
+html, body {
   margin: 0;
   min-width: 390px;
   background:
-    radial-gradient(circle at top, rgba(15, 118, 110, 0.14), transparent 34%),
-    linear-gradient(180deg, var(--bg) 0%, #f8f4ee 48%, var(--bg-strong) 100%);
+    radial-gradient(ellipse at top left, rgba(37, 99, 235, 0.13), transparent 42%),
+    radial-gradient(ellipse at bottom right, rgba(99, 102, 241, 0.09), transparent 38%),
+    linear-gradient(180deg, var(--bg) 0%, #f0f4fd 50%, var(--bg-strong) 100%);
   color: var(--text);
   font-family: "Aptos", "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
-body {
-  padding: 16px;
-}
+body { padding: 16px; }
 
-button,
-input {
-  font: inherit;
-}
+button, input { font: inherit; }
 
-.shell {
-  display: grid;
-  gap: 14px;
-}
+/* ── Shell grid ─────────────────────────────────────────────────────────────── */
+.shell { display: grid; gap: 14px; }
 
+/* ── Shared card chrome ─────────────────────────────────────────────────────── */
 .hero,
 .panel,
 .stat-card,
@@ -55,20 +68,23 @@ input {
 .vault-item {
   border: 1px solid var(--line);
   background: var(--surface);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
   box-shadow: var(--shadow);
 }
 
+/* ── Hero header ────────────────────────────────────────────────────────────── */
 .hero {
   display: grid;
   gap: 14px;
-  padding: 18px;
+  padding: 20px;
   border-radius: calc(var(--radius) + 6px);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.72)),
-    radial-gradient(circle at right top, rgba(15, 118, 110, 0.18), transparent 32%);
+    linear-gradient(145deg, rgba(255,255,255,0.92), rgba(240,246,255,0.78)),
+    radial-gradient(circle at right top, rgba(37, 99, 235, 0.16), transparent 36%);
+  border-color: rgba(37, 99, 235, 0.14);
 }
 
+/* ── Typography helpers ─────────────────────────────────────────────────────── */
 .eyebrow,
 .section-label,
 .stat-card span,
@@ -98,10 +114,7 @@ input {
   letter-spacing: -0.02em;
 }
 
-.hero h1 {
-  font-size: 1.65rem;
-  line-height: 1.05;
-}
+.hero h1 { font-size: 1.6rem; line-height: 1.06; }
 
 .lede {
   margin: 10px 0 0;
@@ -109,13 +122,14 @@ input {
   line-height: 1.5;
 }
 
+/* ── Status card ────────────────────────────────────────────────────────────── */
 .status-card {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
 }
 
 .status-actions {
@@ -126,12 +140,13 @@ input {
 }
 
 .status-dot {
-  width: 12px;
-  height: 12px;
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
-  margin-top: 4px;
-  background: linear-gradient(180deg, #22c55e, #0f766e);
-  box-shadow: 0 0 0 6px var(--accent-soft);
+  margin-top: 2px;
+  background: linear-gradient(180deg, #60a5fa, var(--accent));
+  box-shadow: 0 0 0 5px var(--accent-soft);
 }
 
 .status-card strong,
@@ -141,6 +156,7 @@ input {
   display: block;
 }
 
+/* ── Stats grid ─────────────────────────────────────────────────────────────── */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -149,20 +165,19 @@ input {
 
 .stat-card {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .stat-card.accent {
-  background: linear-gradient(180deg, rgba(15, 118, 110, 0.15), rgba(255, 255, 255, 0.88));
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.13), rgba(255,255,255,0.90));
+  border-color: rgba(37, 99, 235, 0.18);
 }
 
-.stat-card strong {
-  margin: 8px 0 2px;
-  font-size: 0.95rem;
-}
+.stat-card strong { margin: 8px 0 2px; font-size: 0.95rem; }
 
+/* ── Panels ─────────────────────────────────────────────────────────────────── */
 .panel {
-  padding: 16px;
+  padding: 18px;
   border-radius: var(--radius);
 }
 
@@ -173,29 +188,32 @@ input {
   gap: 12px;
 }
 
-.panel-header.compact {
-  align-items: center;
-}
+.panel-header.compact { align-items: center; }
 
+/* ── Tab group ──────────────────────────────────────────────────────────────── */
 .tab-group {
   display: inline-flex;
-  gap: 6px;
+  gap: 4px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.08);
+  background: var(--accent-soft);
+  border: 1px solid rgba(37, 99, 235, 0.14);
 }
 
+/* ── Buttons — shared transitions ───────────────────────────────────────────── */
 .tab-button,
 .secondary-button,
 .primary-button,
 .vault-item-actions button {
   border: 0;
   border-radius: 999px;
+  cursor: pointer;
   transition:
-    transform 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
+    transform 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
 }
 
 .tab-button,
@@ -206,87 +224,115 @@ input {
 }
 
 .tab-button {
-  padding: 8px 12px;
+  padding: 7px 13px;
   font-weight: 700;
+  font-size: 0.84rem;
 }
 
 .tab-button.is-active {
   background: var(--surface-strong);
-  box-shadow: 0 8px 18px rgba(19, 78, 74, 0.12);
+  color: var(--accent);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.16);
 }
 
-.tab-button:hover,
-.secondary-button:hover,
-.primary-button:hover,
-.vault-item-actions button:hover {
+/* hover lift — skip for disabled buttons */
+.tab-button:not(:disabled):hover,
+.secondary-button:not(:disabled):hover,
+.primary-button:not(:disabled):hover,
+.vault-item-actions button:not(:disabled):hover {
   transform: translateY(-1px);
 }
 
-.tab-panels {
-  margin-top: 14px;
-}
+.tab-panels { margin-top: 14px; }
 
-.auth-form {
-  display: grid;
-  gap: 12px;
-}
+/* ── Auth form ──────────────────────────────────────────────────────────────── */
+.auth-form { display: grid; gap: 12px; }
 
 .auth-form label {
   display: grid;
   gap: 6px;
   font-size: 0.88rem;
   font-weight: 700;
+  color: var(--text);
 }
 
 .auth-form input {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 11px 14px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--text);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .auth-form input:focus {
-  border-color: rgba(15, 118, 110, 0.45);
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.auth-form input:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  background: rgba(241, 245, 255, 0.6);
+}
+
+/* ── Primary & secondary buttons ────────────────────────────────────────────── */
 .primary-button,
 .secondary-button {
-  padding: 12px 16px;
+  padding: 11px 18px;
   font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .primary-button {
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-  color: white;
-  box-shadow: 0 12px 24px rgba(15, 118, 110, 0.24);
+  background: linear-gradient(160deg, var(--accent), var(--accent-mid));
+  color: #ffffff;
+  box-shadow: 0 8px 20px var(--accent-glow);
+}
+
+.primary-button:not(:disabled):hover {
+  background: linear-gradient(160deg, #3b82f6, var(--accent));
+  box-shadow: 0 10px 26px var(--accent-glow);
+}
+
+.primary-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .secondary-button {
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
+  border: 1.5px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--accent-strong);
 }
 
+.secondary-button:hover {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+/* ── Text helpers ───────────────────────────────────────────────────────────── */
 .helper-text {
   margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.81rem;
+  line-height: 1.48;
 }
 
 .auth-feedback {
   margin: 0;
   min-height: 1.2em;
   font-size: 0.82rem;
+  font-weight: 600;
   color: var(--accent-strong);
 }
 
-.auth-feedback.is-error {
-  color: #b42318;
-}
+.auth-feedback.is-error { color: var(--danger); }
 
+/* ── Site card ──────────────────────────────────────────────────────────────── */
 .site-card {
   display: flex;
   align-items: center;
@@ -294,105 +340,301 @@ input {
   gap: 14px;
   margin-top: 14px;
   padding: 16px;
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--surface-strong);
+  border-color: rgba(37, 99, 235, 0.12);
 }
 
-.site-card strong {
-  margin: 4px 0;
-}
+.site-card strong { margin: 4px 0; }
 
+/* ── Pill badge ─────────────────────────────────────────────────────────────── */
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 7px 11px;
+  padding: 5px 11px;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.12);
-  color: var(--accent-strong);
-  font-size: 0.78rem;
+  background: var(--accent-soft);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  color: var(--accent);
+  font-size: 0.76rem;
   font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
-.vault-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+/* ── Vault scope toggle ─────────────────────────────────────────────────────── */
+.vault-scope {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(37, 99, 235, 0.12);
 }
 
-.vault-search {
-  display: block;
-  margin-top: 14px;
-}
+/* ── Vault search ───────────────────────────────────────────────────────────── */
+.vault-list { display: grid; gap: 10px; margin-top: 14px; }
+
+.vault-search { display: block; margin-top: 12px; }
 
 .vault-search input {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 11px 14px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--text);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .vault-search input:focus {
-  border-color: rgba(15, 118, 110, 0.45);
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* ── Vault empty state ──────────────────────────────────────────────────────── */
 .vault-empty {
   margin: 0;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px dashed var(--line);
-  background: rgba(255, 255, 255, 0.62);
+  padding: 16px;
+  border-radius: 14px;
+  border: 1.5px dashed rgba(37, 99, 235, 0.22);
+  background: rgba(241, 245, 255, 0.6);
   color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.4;
+  font-size: 0.87rem;
+  line-height: 1.45;
+  text-align: center;
 }
 
+/* ── Vault item ─────────────────────────────────────────────────────────────── */
+/*
+   KEY LAYOUT FIX:
+   Switch from horizontal flex (which caused overflow when 5+ buttons appear)
+   to a vertical stack: identity info on top, button row wrapping below.
+   This way buttons never overflow the card width regardless of count.
+*/
 .vault-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;   /* ← stacked, not side-by-side */
+  gap: 10px;
   padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.82);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(37, 99, 235, 0.08);
+  transition: box-shadow 0.15s;
+}
+
+.vault-item:hover {
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.11);
 }
 
 .vault-item p {
-  margin: 4px 0 0;
-  font-size: 0.84rem;
+  margin: 3px 0 0;
+  font-size: 0.82rem;
 }
 
 .vault-item-actions {
-  display: inline-flex;
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;          /* ← wrap instead of overflow */
+  gap: 6px;
 }
 
 .vault-item-actions button {
-  padding: 8px 11px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
+  padding: 6px 12px;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.vault-item-actions button:hover {
+  background: var(--accent-soft);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+/* ── Edit panel ─────────────────────────────────────────────────────────────── */
+.edit-panel {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: var(--surface-strong);
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ── Danger state ───────────────────────────────────────────────────────────── */
+.danger-button {
+  color: var(--danger) !important;
+  border-color: rgba(220, 38, 38, 0.28) !important;
+  background: var(--danger-soft) !important;
+}
+
+/* ── Input + inline action row ──────────────────────────────────────────────── */
+.input-with-action {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.input-with-action input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-action-button {
+  flex-shrink: 0;
+  padding: 0 12px;
+  height: 42px;              /* matches the 11px + 1.5px input height */
+  border-radius: 10px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent-strong);
   font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s, border-color 0.14s, transform 0.14s;
 }
 
-.save-shell {
-  min-width: 360px;
+.inline-action-button:hover {
+  background: var(--accent-soft);
+  border-color: rgba(37, 99, 235, 0.32);
+  transform: translateY(-1px);
 }
 
-.save-form {
-  margin-top: 16px;
+.inline-action-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
 }
+
+/* ── Password generator panel ───────────────────────────────────────────────── */
+.generator-panel {
+  margin-top: 8px;
+  padding: 14px;
+  border: 1.5px solid rgba(37, 99, 235, 0.18);
+  border-radius: 12px;
+  background: rgba(241, 245, 255, 0.72);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.generator-panel.is-standalone {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.generator-output-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generator-preview {
+  flex: 1;
+  font-family: "Menlo", "Consolas", "Courier New", monospace;
+  font-size: 0.84rem;
+  word-break: break-all;
+  padding: 9px 12px;
+  background: var(--surface-strong);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.generator-slider-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.generator-slider-label strong { color: var(--text); }
+
+.generator-slider-label input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.generator-controls { display: flex; flex-direction: column; gap: 10px; }
+
+.generator-toggles { display: flex; flex-direction: column; gap: 5px; }
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+
+.toggle-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.generator-actions { display: flex; gap: 8px; }
+
+.generator-actions .secondary-button,
+.generator-actions .primary-button { flex: 1; }
+
+/* ── Password strength meter ────────────────────────────────────────────────── */
+.strength-meter { display: grid; gap: 5px; }
+
+.strength-segments { display: flex; gap: 5px; }
+
+.strength-seg {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.22s ease;
+}
+
+.strength-seg.is-active {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.10);
+}
+
+.strength-label {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  transition: color 0.18s ease;
+}
+
+/* ── Save prompt (save-prompt.js) ───────────────────────────────────────────── */
+.save-shell { min-width: 360px; }
+
+.save-form { margin-top: 16px; }
 
 .save-options {
   display: grid;
   gap: 10px;
   margin: 0;
   padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.62);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(241, 245, 255, 0.6);
 }
 
 .save-options legend {
@@ -411,22 +653,19 @@ input {
   font-weight: 700;
 }
 
-.radio-row input {
-  width: auto;
-}
+.radio-row input { width: auto; }
 
 .save-options select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--text);
+  outline: none;
 }
 
-.save-options select:disabled {
-  opacity: 0.62;
-}
+.save-options select:disabled { opacity: 0.5; }
 
 .save-actions {
   display: flex;
@@ -434,250 +673,24 @@ input {
   gap: 10px;
 }
 
-.edit-panel {
-  border-color: rgba(15, 118, 110, 0.24);
-  background: var(--surface-strong);
-}
-
-.edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.danger-button {
-  color: #b42318 !important;
-}
-
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media (max-width: 430px) {
-  body {
-    padding: 12px;
-  }
+  body { padding: 12px; }
 
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
+  .stats-grid { grid-template-columns: 1fr; }
 
   .site-card,
-  .vault-item,
   .panel-header {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .tab-group {
-    width: 100%;
+  .tab-group { width: 100%; }
+  .tab-button { flex: 1; }
+
+  /* On very narrow screens, let action buttons wrap more aggressively */
+  .vault-item-actions button {
+    font-size: 0.74rem;
+    padding: 5px 10px;
   }
-
-  .tab-button {
-    flex: 1;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   PASTE THESE RULES INTO YOUR EXISTING popup.css
-   They add styling for:
-     1. .input-with-action  — wraps an <input> + inline button (Generate)
-     2. .inline-action-button — the small button that sits inside the row
-     3. .generator-panel    — the collapsible generator widget
-     4. .toggle-label       — checkbox rows inside the generator
-   ───────────────────────────────────────────────────────────────────────────── */
-
-/* 1. Input row with an inline action button ---------------------------------- */
-.input-with-action {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.input-with-action input {
-  flex: 1;
-  /* keep whatever border/padding your existing inputs use */
-  min-width: 0; /* prevent overflow in flex context */
-}
-
-/* 2. Small inline button (Generate / Copy) ----------------------------------- */
-.inline-action-button {
-  flex-shrink: 0;
-  padding: 0 10px;
-  height: 36px;           /* match your existing input height */
-  border-radius: 6px;
-  border: 1px solid var(--border, #d1d5db);
-  background: var(--surface-2, #f3f4f6);
-  color: var(--text, #111827);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.inline-action-button:hover {
-  background: var(--surface-3, #e5e7eb);
-  border-color: var(--border-strong, #9ca3af);
-}
-
-.inline-action-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* 3. Generator panel --------------------------------------------------------- */
-.generator-panel {
-  margin-top: 10px;
-  padding: 14px;
-  border: 1px solid var(--border, #d1d5db);
-  border-radius: 10px;
-  background: var(--surface-2, #f9fafb);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.generator-panel.is-standalone {
-  /* inside its own <section> it doesn't need its own card look */
-  border: none;
-  padding: 0;
-  background: transparent;
-}
-
-/* Generated password preview row */
-.generator-output-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.generator-preview {
-  flex: 1;
-  font-family: "Menlo", "Consolas", "Courier New", monospace;
-  font-size: 0.85rem;
-  word-break: break-all;
-  padding: 8px 10px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #d1d5db);
-  border-radius: 6px;
-  color: var(--text, #111827);
-  letter-spacing: 0.03em;
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-}
-
-/* Length slider row */
-.generator-slider-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.85rem;
-  color: var(--text-muted, #6b7280);
-  font-weight: 500;
-}
-
-.generator-slider-label strong {
-  color: var(--text, #111827);
-}
-
-.generator-slider-label input[type="range"] {
-  width: 100%;
-  accent-color: var(--accent, #4f46e5);
-  cursor: pointer;
-}
-
-/* Checkbox toggles */
-.generator-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.generator-toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
-  color: var(--text, #111827);
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-label input[type="checkbox"] {
-  accent-color: var(--accent, #4f46e5);
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-}
-
-/* Generator action buttons row */
-.generator-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.generator-actions .secondary-button,
-.generator-actions .primary-button {
-  flex: 1;
-}
-
-/* 4. Password strength meter ------------------------------------------------- */
-.strength-meter {
-  display: grid;
-  gap: 6px;
-}
-
-.strength-segments {
-  display: flex;
-  gap: 5px;
-}
-
-.strength-seg {
-  flex: 1;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--line, rgba(31, 41, 51, 0.12));
-  transition: background 0.25s ease;
-}
-
-.strength-seg.is-active {
-  /* colour is set inline by JS — transition handles the animation */
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-}
-
-.strength-label {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  /* colour set inline by JS to match segment colour */
-  transition: color 0.2s ease;
-}
-
-/* Disabled confirm input — soften it visually */
-#confirm-password:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Disabled register submit button */
-#register-submit-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
-
-/* 5. Vault item — extra copy buttons ---------------------------------------- */
-/*
-   Your .vault-item-actions already uses flex. The two new "Copy user" /
-   "Copy pass" buttons inherit the same button styling. If they look too wide,
-   add this rule:
-*/
-.vault-item-actions button {
-  white-space: nowrap;
 }
