@@ -9,6 +9,7 @@ const AUTO_LOCK_ALARM = "pm_auto_lock";
 const LAST_ACTIVITY_KEY = "password-manager-last-activity";
 const DEFAULT_CREDENTIALS_KEY = "password-manager-default-credentials";
 const PENDING_SAVE_KEY = "password-manager-pending-save";
+const REMEMBER_ME_KEY = "password-manager-remember-me";
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -93,6 +94,15 @@ async function touchActivity() {
     return;
   }
   await storageSessionSet(LAST_ACTIVITY_KEY, Date.now());
+ 
+  // Skip scheduling auto-lock when the user chose "Remember Me"
+  const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
+  if (rememberMe === true) {
+    // Clear any existing alarm so it never fires
+    chrome.alarms.clear(AUTO_LOCK_ALARM);
+    return;
+  }
+ 
   await scheduleAutoLockFromLastActivity();
 }
 
@@ -1323,6 +1333,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
 
+    return true;
+  }
+
+  if (message.type === "SET_REMEMBER_ME") {
+    const rememberMe = message.rememberMe === true;
+    void (async () => {
+      try {
+        await storageLocalSet(REMEMBER_ME_KEY, rememberMe);
+        if (rememberMe) {
+          // Clear the alarm immediately so it won't fire mid-session
+          chrome.alarms.clear(AUTO_LOCK_ALARM);
+        } else {
+          // Re-arm the alarm now that remember-me is off
+          await scheduleAutoLockFromLastActivity();
+        }
+        sendResponse?.({ ok: true });
+      } catch (err) {
+        sendResponse?.({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+ 
+  if (message.type === "GET_REMEMBER_ME") {
+    void (async () => {
+      const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
+      sendResponse?.({ ok: true, rememberMe: rememberMe === true });
+    })();
     return true;
   }
 });

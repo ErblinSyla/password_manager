@@ -1163,7 +1163,7 @@ async function apiRequest(path, options = {}) {
 
 async function refreshSessionState() {
   const session = await readSession();
-
+ 
   if (!session?.token) {
     await clearVaultKey();
     setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
@@ -1177,17 +1177,17 @@ async function refreshSessionState() {
     closeCredentialEditor();
     return;
   }
-
+ 
   let isUnlocked = !hasChromeRuntime();
-
+ 
   if (hasChromeRuntime()) {
     const response = await sendMessage({ type: "IS_UNLOCKED" });
     isUnlocked = Boolean(response?.unlocked);
   }
-
+ 
   setViewState({ isAuthed: true, isUnlocked });
   reportActivity();
-
+ 
   if (isUnlocked) {
     await refreshActiveTabAutofillState();
   } else {
@@ -1197,16 +1197,23 @@ async function refreshSessionState() {
     closeCredentialEditor();
     resetVaultScope();
   }
-
+ 
   try {
     const data = await apiRequest("/auth/me", {
       headers: {
         Authorization: `Bearer ${session.token}`,
       },
     });
-
+ 
     if (isUnlocked) {
-      setStatus("Unlocked", `Vault ready for ${data.user.email}. Auto-lock after inactivity.`);
+      const rememberResp = await sendMessage({ type: "GET_REMEMBER_ME" });
+      const isRemembered = rememberResp?.rememberMe === true;
+      setStatus(
+        "Unlocked",
+        isRemembered
+          ? `Vault ready for ${data.user.email}. Auto-lock disabled.`
+          : `Vault ready for ${data.user.email}. Auto-lock after inactivity.`
+      );
     } else {
       setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
     }
@@ -1230,52 +1237,74 @@ function attachAuthFeedback(form) {
 
 async function handleSignIn(event) {
   event.preventDefault();
-
+ 
   if (!signInForm) {
     return;
   }
-
+ 
   const feedback = attachAuthFeedback(signInForm);
   const formData = new FormData(signInForm);
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
-
+  const rememberMe = document.getElementById("remember-me-checkbox")?.checked ?? false;
+ 
   feedback.textContent = "";
   feedback.classList.remove("is-error");
-
+ 
   try {
     const data = await apiRequest("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-
+ 
     if (hasChromeRuntime()) {
       const keyCheckResp = await sendMessage({
         type: "CREATE_KEY_CHECK",
         masterPassword: password,
         salt: data.salt,
       });
-
+ 
       if (!keyCheckResp?.ok) {
         throw new Error(keyCheckResp?.error || "Unable to initialize vault session");
       }
-
+ 
+      // Persist remember-me preference and session
+      await sendMessage({ type: "SET_REMEMBER_ME", rememberMe });
       await writeSession({
         ...data,
         keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
         keyCheckIv: keyCheckResp.keyCheckIv,
       });
-
-      setViewState({ isAuthed: true, isUnlocked: false });
-      setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+ 
+      // Auto-unlock immediately — the user already proved their identity
+      // with the master password, so asking them to type it again is redundant.
+      const unlockResp = await sendMessage({
+        type: "UNLOCK",
+        masterPassword: password,
+        salt: data.salt,
+        keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
+        keyCheckIv: keyCheckResp.keyCheckIv,
+      });
+ 
+      if (unlockResp?.ok) {
+        setViewState({ isAuthed: true, isUnlocked: true });
+        setStatus("Unlocked", `Welcome back, ${data.user.email}. Vault is ready.`);
+        feedback.textContent = "Signed in and unlocked.";
+        reportActivity();
+        void refreshActiveTabAutofillState();
+      } else {
+        // Unlock failed for some reason — fall back to locked state gracefully
+        setViewState({ isAuthed: true, isUnlocked: false });
+        setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+        feedback.textContent = "Signed in. Please unlock your vault.";
+        reportActivity();
+      }
     } else {
       await writeSession(data);
       setViewState({ isAuthed: true, isUnlocked: true });
       setStatus("Signed in", `Welcome back, ${data.user.email}.`);
+      reportActivity();
     }
-
-    reportActivity();
-    feedback.textContent = "Signed in. Vault is locked.";
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to log in.";
     feedback.classList.add("is-error");
@@ -1285,65 +1314,78 @@ async function handleSignIn(event) {
 
 async function handleRegister(event) {
   event.preventDefault();
-
+ 
   if (!registerForm) {
     return;
   }
-
+ 
   const feedback = attachAuthFeedback(registerForm);
   const formData = new FormData(registerForm);
   const email = String(formData.get("register-email") || "").trim();
   const password = String(formData.get("register-password") || "");
   const confirmPassword = String(formData.get("confirm-password") || "");
-
+ 
   feedback.textContent = "";
   feedback.classList.remove("is-error");
-
+ 
   if (password !== confirmPassword) {
     feedback.textContent = "Passwords do not match.";
     feedback.classList.add("is-error");
     return;
   }
-
+ 
   try {
     const data = await apiRequest("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-
-    if (data.recoveryKey) {
-      showRecoveryKeyModal(data.recoveryKey, () => {
-      console.log("Recovery key saved by user");
-    });
-  }
-
+ 
     if (hasChromeRuntime()) {
       const keyCheckResp = await sendMessage({
         type: "CREATE_KEY_CHECK",
         masterPassword: password,
         salt: data.salt,
       });
-
+ 
       if (!keyCheckResp?.ok) {
         throw new Error(keyCheckResp?.error || "Unable to initialize vault session");
       }
-
+ 
       await writeSession({
         ...data,
         keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
         keyCheckIv: keyCheckResp.keyCheckIv,
       });
-
-      setViewState({ isAuthed: true, isUnlocked: false });
-      setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+ 
+      // Auto-unlock immediately after registration too
+      const unlockResp = await sendMessage({
+        type: "UNLOCK",
+        masterPassword: password,
+        salt: data.salt,
+        keyCheckCiphertext: keyCheckResp.keyCheckCiphertext,
+        keyCheckIv: keyCheckResp.keyCheckIv,
+      });
+ 
+      if (unlockResp?.ok) {
+        setViewState({ isAuthed: true, isUnlocked: true });
+        setStatus("Unlocked", `Welcome, ${data.user.email}. Your vault is ready.`);
+        feedback.textContent = "Account created and vault unlocked.";
+        reportActivity();
+        void refreshActiveTabAutofillState();
+      } else {
+        setViewState({ isAuthed: true, isUnlocked: false });
+        setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
+        feedback.textContent = "Account created. Please unlock your vault.";
+        reportActivity();
+      }
     } else {
       await writeSession(data);
       setViewState({ isAuthed: true, isUnlocked: true });
       setStatus("Signed in", `Welcome, ${data.user.email}.`);
+      reportActivity();
     }
-
-    reportActivity();
-    feedback.textContent = "Account created. Vault is locked.";
+ 
+    feedback.textContent = feedback.textContent || "Account created.";
   } catch (error) {
     feedback.textContent = error instanceof Error ? error.message : "Unable to create account.";
     feedback.classList.add("is-error");
