@@ -12,6 +12,8 @@ model User {
   email        String       @unique
   passwordHash String
   salt         String
+  encryptedVaultKey   String?
+  encryptedVaultKeyIv String?
   createdAt    DateTime     @default(now())
   credentials  Credential[]
 }

@@ -433,6 +433,11 @@ function setViewState({ isAuthed, isUnlocked }) {
   if (signOutButton) {
     signOutButton.hidden = !isAuthed;
   }
+  
+  const changePasswordButton = document.getElementById("change-password-button");
+  if (changePasswordButton) {
+    changePasswordButton.hidden = !isAuthed || !isUnlocked;
+  }
 }
 
 function isChromeSessionStorageAvailable() {
@@ -1306,6 +1311,12 @@ async function handleRegister(event) {
       body: JSON.stringify({ email, password }),
     });
 
+    if (data.recoveryKey) {
+      showRecoveryKeyModal(data.recoveryKey, () => {
+      console.log("Recovery key saved by user");
+    });
+  }
+
     if (hasChromeRuntime()) {
       const keyCheckResp = await sendMessage({
         type: "CREATE_KEY_CHECK",
@@ -1475,9 +1486,222 @@ vaultScopeButtons.forEach((btn) => {
   });
 });
 
+// ============================================================
+// NEW: Forgot password & Change master password handlers
+// ============================================================
+
+// Show Forgot Password modal
+function handleForgotPassword() {
+  const modal = document.getElementById("forgot-password-modal");
+  const emailInput = document.getElementById("fp-email");
+  const recoveryKeyInput = document.getElementById("fp-recovery-key");
+  const newPwdInput = document.getElementById("fp-new-password");
+  const confirmInput = document.getElementById("fp-confirm-password");
+  const feedback = document.getElementById("fp-feedback");
+  const submitBtn = document.getElementById("fp-submit-button");
+  const cancelBtn = document.getElementById("fp-cancel-button");
+  const closeBtn = document.getElementById("fp-modal-close");
+
+  if (!modal) return;
+
+  // Reset
+  emailInput.value = "";
+  recoveryKeyInput.value = "";
+  newPwdInput.value = "";
+  confirmInput.value = "";
+  feedback.textContent = "";
+
+  const closeModal = () => {
+    modal.hidden = true;
+    submitBtn.onclick = null;
+    cancelBtn.onclick = null;
+    closeBtn.onclick = null;
+  };
+
+  const handleSubmit = async () => {
+    const email = emailInput.value.trim();
+    const recoveryKey = recoveryKeyInput.value.trim();
+    const newPassword = newPwdInput.value;
+    const confirm = confirmInput.value;
+
+    if (!email) {
+      feedback.textContent = "Email is required.";
+      return;
+    }
+    if (!recoveryKey) {
+      feedback.textContent = "Recovery key is required.";
+      return;
+    }
+    if (newPassword.length < 8) {
+      feedback.textContent = "New password must be at least 8 characters.";
+      return;
+    }
+    if (newPassword !== confirm) {
+      feedback.textContent = "Passwords do not match.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Resetting...";
+
+    const response = await sendMessage({
+      type: "RESET_WITH_RECOVERY",
+      email,
+      recoveryKey,
+      newPassword,
+    });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Reset Password";
+
+    if (response?.ok && response.recoveryKey) {
+      closeModal();
+      showRecoveryKeyModal(response.recoveryKey, () => {
+        refreshSessionState();
+      });
+    } else {
+      feedback.textContent = response?.error || "Reset failed. Invalid recovery key or email.";
+    }
+  };
+
+  submitBtn.onclick = handleSubmit;
+  cancelBtn.onclick = closeModal;
+  closeBtn.onclick = closeModal;
+
+  modal.hidden = false;
+  emailInput.focus();
+}
+
+// Show Change Password modal
+function showChangePasswordModal() {
+  const modal = document.getElementById("change-password-modal");
+  const oldPwdInput = document.getElementById("cp-old-password");
+  const newPwdInput = document.getElementById("cp-new-password");
+  const confirmInput = document.getElementById("cp-confirm-password");
+  const feedback = document.getElementById("cp-feedback");
+  const submitBtn = document.getElementById("cp-submit-button");
+  const cancelBtn = document.getElementById("cp-cancel-button");
+  const closeBtn = document.getElementById("cp-modal-close");
+
+  if (!modal) return;
+
+  // Reset form
+  oldPwdInput.value = "";
+  newPwdInput.value = "";
+  confirmInput.value = "";
+  feedback.textContent = "";
+
+  const closeModal = () => {
+    modal.hidden = true;
+    // Remove listeners to avoid duplicates
+    submitBtn.onclick = null;
+    cancelBtn.onclick = null;
+    closeBtn.onclick = null;
+  };
+
+  const handleSubmit = async () => {
+    const oldPwd = oldPwdInput.value;
+    const newPwd = newPwdInput.value;
+    const confirm = confirmInput.value;
+
+    if (!oldPwd) {
+      feedback.textContent = "Current password is required.";
+      return;
+    }
+    if (newPwd.length < 8) {
+      feedback.textContent = "New password must be at least 8 characters.";
+      return;
+    }
+    if (newPwd !== confirm) {
+      feedback.textContent = "New passwords do not match.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Changing...";
+
+    const response = await sendMessage({
+      type: "CHANGE_MASTER_PASSWORD",
+      oldPassword: oldPwd,
+      newPassword: newPwd,
+    });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Change Password";
+
+    if (response?.ok && response.recoveryKey) {
+      closeModal();
+      showRecoveryKeyModal(response.recoveryKey, () => {
+        refreshSessionState();
+      });
+    } else {
+      feedback.textContent = response?.error || "Change failed. Check your current password.";
+    }
+  };
+
+  submitBtn.onclick = handleSubmit;
+  cancelBtn.onclick = closeModal;
+  closeBtn.onclick = closeModal;
+
+  modal.hidden = false;
+  oldPwdInput.focus();
+}
+
+// Recovery key modal handling
+let pendingRecoveryKey = null;
+let pendingCallback = null;
+
+function showRecoveryKeyModal(recoveryKey, onConfirm) {
+  const modal = document.getElementById("recovery-modal");
+  const display = document.getElementById("recovery-key-display");
+  const copyBtn = document.getElementById("copy-recovery-key");
+  const confirmBtn = document.getElementById("modal-confirm");
+  const closeBtn = document.getElementById("modal-close");
+
+  if (!modal || !display) return;
+
+  pendingRecoveryKey = recoveryKey;
+  pendingCallback = onConfirm;
+
+  display.textContent = recoveryKey;
+
+  // Copy handler
+  const copyHandler = () => {
+    navigator.clipboard.writeText(recoveryKey);
+    copyBtn.textContent = "Copied!";
+    setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+  };
+  copyBtn.onclick = copyHandler;
+
+  // Confirm / close handlers
+  const closeModal = () => {
+    modal.hidden = true;
+    if (pendingCallback) pendingCallback();
+    pendingRecoveryKey = null;
+    pendingCallback = null;
+    // Clean up listeners
+    confirmBtn.onclick = null;
+    closeBtn.onclick = null;
+    copyBtn.onclick = null;
+  };
+  confirmBtn.onclick = closeModal;
+  closeBtn.onclick = closeModal;
+
+  modal.hidden = false;
+}
+
 window.addEventListener("mousemove", reportActivity);
 window.addEventListener("keydown", reportActivity);
 window.addEventListener("click", reportActivity);
+// Attach change password and forgot password handlers
+document.getElementById("change-password-button")?.addEventListener("click", showChangePasswordModal);
+document.getElementById("forgot-password-link")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  handleForgotPassword();
+});
 setActiveTab("sign-in");
+document.getElementById("recovery-modal")?.setAttribute("hidden", "true");
+document.getElementById("change-password-modal")?.setAttribute("hidden", "true");
+document.getElementById("forgot-password-modal")?.setAttribute("hidden", "true");
 setViewState({ isAuthed: false, isUnlocked: false });
 void refreshSessionState();

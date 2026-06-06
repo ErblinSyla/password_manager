@@ -20,15 +20,16 @@
 
         <div class="status-card">
           <span class="status-dot"></span>
-          <div>
-            <strong id="connection-title">Extension ready</strong>
-            <p id="connection-message">Connects to the local backend on localhost:3001.</p>
+            <div>
+              <strong id="connection-title">Extension ready</strong>
+                <p id="connection-message">Connects to the local backend on localhost:3001.</p>
+            </div>
+            <div class="status-actions">
+              <button class="secondary-button" type="button" id="signout-button" hidden>Sign out</button>
+              <button class="secondary-button" type="button" id="lock-button" hidden>Lock</button>
+              <button class="secondary-button" type="button" id="change-password-button" hidden>Change Password</button>
+            </div>
           </div>
-          <div class="status-actions">
-            <button class="secondary-button" type="button" id="signout-button" hidden>Sign out</button>
-            <button class="secondary-button" type="button" id="lock-button" hidden>Lock</button>
-          </div>
-        </div>
       </header>
 
       <section class="stats-grid" aria-label="Quick stats" data-when="unlocked" hidden>
@@ -75,6 +76,7 @@
             </label>
             <button class="primary-button" type="submit">Log in</button>
             <p class="helper-text">Sign in to unlock and manage your saved credentials.</p>
+            <a href="#" id="forgot-password-link" style="display: block; text-align: center; margin-top: 8px;">Forgot password?</a>
           </form>
 
           <form class="auth-form" data-panel="create-account" hidden>
@@ -273,6 +275,84 @@
         </div>
       </section>
       <!-- ────────────────────────────────────────────────────────────────── -->
+       <!-- Recovery Key Modal -->
+<div id="recovery-modal" class="modal" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>⚠️ Save your recovery key</h3>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>This key is the <strong>only way</strong> to reset your master password if you forget it. 
+      It will not be shown again.</p>
+      <div class="recovery-key-container">
+        <code id="recovery-key-display" class="recovery-key"></code>
+        <button class="inline-action-button" id="copy-recovery-key">Copy</button>
+      </div>
+      <p class="helper-text warning">Store this key in a safe place (e.g., password manager, printed paper).</p>
+    </div>
+    <div class="modal-footer">
+      <button class="primary-button" id="modal-confirm">I have saved the key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="change-password-modal" class="modal" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Change Master Password</h3>
+      <button class="modal-close" id="cp-modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <label>Current master password</label>
+      <input type="password" id="cp-old-password" class="modal-input" placeholder="Enter current password" />
+
+      <label style="margin-top: 16px;">New master password</label>
+      <input type="password" id="cp-new-password" class="modal-input" placeholder="Min 8 characters" />
+
+      <label style="margin-top: 16px;">Confirm new password</label>
+      <input type="password" id="cp-confirm-password" class="modal-input" placeholder="Repeat new password" />
+
+      <p id="cp-feedback" class="helper-text warning" style="margin-top: 12px;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary-button" id="cp-cancel-button">Cancel</button>
+      <button class="primary-button" id="cp-submit-button">Change Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Forgot Password (Recovery) Modal -->
+<div id="forgot-password-modal" class="modal" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Reset Master Password (Recovery)</h3>
+      <button class="modal-close" id="fp-modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>Enter your recovery key and new master password.</p>
+
+      <label>Email address</label>
+      <input type="email" id="fp-email" class="modal-input" placeholder="your@email.com" />
+
+      <label style="margin-top: 16px;">Recovery key</label>
+      <input type="text" id="fp-recovery-key" class="modal-input" placeholder="64-character hex key" />
+
+      <label style="margin-top: 16px;">New master password</label>
+      <input type="password" id="fp-new-password" class="modal-input" placeholder="Min 8 characters" />
+
+      <label style="margin-top: 16px;">Confirm new password</label>
+      <input type="password" id="fp-confirm-password" class="modal-input" placeholder="Repeat new password" />
+
+      <p id="fp-feedback" class="helper-text warning" style="margin-top: 12px;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary-button" id="fp-cancel-button">Cancel</button>
+      <button class="primary-button" id="fp-submit-button">Reset Password</button>
+    </div>
+  </div>
+</div>
 
     </div>
   </body>

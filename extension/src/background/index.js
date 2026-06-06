@@ -23,6 +23,25 @@ function storageSessionGet(key) {
   });
 }
 
+async function listAllCredentialRecordsWithKey(token, key) {
+  const credentials = await apiRequest("/credentials", token);
+  if (!Array.isArray(credentials)) return [];
+  const out = [];
+  for (const cred of credentials) {
+    try {
+      const bytes = await aesGcmDecrypt(key, cred.ciphertext, cred.iv);
+      const text = new TextDecoder().decode(bytes);
+      const { username, password } = JSON.parse(text);
+      out.push({
+        id: cred.id,
+        domain: cred.domain,
+        decrypted: { username: username || "", password },
+      });
+    } catch (e) { /* skip */ }
+  }
+  return out;
+}
+
 function storageSessionGetMany(keys) {
   return new Promise((resolve) => {
     chrome.storage.session.get(keys, (result) => {
@@ -1082,6 +1101,225 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse?.({ ok: true, action: "prompted" });
       } catch (error) {
         sendResponse?.({ ok: false, error: error instanceof Error ? error.message : "Save failed" });
+      }
+    })();
+
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+// DROP-IN REPLACEMENT for the two broken message handlers in background/index.js
+//
+// Replace the entire:
+//   if (message.type === "CHANGE_MASTER_PASSWORD") { ... }
+// and
+//   if (message.type === "RESET_WITH_RECOVERY") { ... }
+// blocks with the two blocks below.
+// ─────────────────────────────────────────────────────────────────────────────
+
+  // ── CHANGE_MASTER_PASSWORD ──────────────────────────────────────────────────
+  if (message.type === "CHANGE_MASTER_PASSWORD") {
+    const { oldPassword, newPassword } = message;
+
+    if (!derivedKey) {
+      sendResponse({ ok: false, error: "Vault is locked." });
+      return true;
+    }
+
+    (async () => {
+      try {
+        const token = await readAuthToken();
+        if (!token) throw new Error("Not signed in.");
+
+        // ── Step 1: decrypt all credentials with the CURRENT in-memory key ──
+        // We already have derivedKey (the current key) in RAM — use it directly
+        // via the existing helper so we don't need the old salt at all.
+        const allRecords = await listAllCredentialRecords(token);
+
+        // ── Step 2: tell the server to change the password hash + get newSalt ──
+        // We do this BEFORE re-encrypting so we have the authoritative newSalt
+        // from the server.  The server also re-derives/re-stores the vault key
+        // for its own recovery path, but the client drives the real key.
+        const changeResp = await fetch(`${API_BASE}/auth/change-password`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ oldPassword, newPassword }),
+        });
+        const changeData = await changeResp.json();
+        if (!changeResp.ok) throw new Error(changeData.error || "Password change failed.");
+
+        const newSalt = changeData.newSalt;
+        if (!newSalt) throw new Error("Server did not return a new salt.");
+
+        // ── Step 3: derive the new vault key from newPassword + SERVER's newSalt ──
+        const newKey = await deriveVaultKey(newPassword, newSalt);
+
+        // ── Step 4: re-encrypt every credential with the new key ──
+        const updates = [];
+        for (const rec of allRecords) {
+          const payload = JSON.stringify({
+            username: rec.decrypted.username,
+            password: rec.decrypted.password,
+          });
+          const bytes = new TextEncoder().encode(payload);
+          const iv = crypto.getRandomValues(new Uint8Array(12));
+          const ciphertext = await crypto.subtle.encrypt(
+            { name: "AES-GCM", iv },
+            newKey,
+            bytes
+          );
+          updates.push({
+            id: rec.id,
+            ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+            iv: bytesToBase64(iv),
+          });
+        }
+
+        // ── Step 5: persist re-encrypted credentials ──
+        if (updates.length > 0) {
+          const bulkResp = await fetch(`${API_BASE}/credentials/bulk`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ updates }),
+          });
+          if (!bulkResp.ok) {
+            const bulkData = await bulkResp.json().catch(() => ({}));
+            throw new Error(bulkData.error || "Bulk re-encryption failed.");
+          }
+        }
+
+        // ── Step 6: create a fresh key-check so the new password can unlock ──
+        const keyCheckResult = await createKeyCheck(newPassword, newSalt);
+
+        // ── Step 7: update in-memory state ──
+        derivedKey = newKey;
+        await touchActivity();
+
+        // ── Step 8: write updated session so popup can build a new key-check ──
+        // We must persist newSalt + keyCheck so the UNLOCK flow works after reload.
+        const existingSession = await storageSessionGet(SESSION_KEY);
+        await storageSessionSet(SESSION_KEY, {
+          ...(existingSession || {}),
+          token,
+          salt: newSalt,
+          keyCheckCiphertext: keyCheckResult.keyCheckCiphertext,
+          keyCheckIv: keyCheckResult.keyCheckIv,
+        });
+
+        sendResponse({ ok: true, recoveryKey: changeData.recoveryKey });
+      } catch (err) {
+        console.error("CHANGE_MASTER_PASSWORD error:", err);
+        sendResponse({ ok: false, error: err.message || "Password change failed." });
+      }
+    })();
+
+    return true;
+  }
+
+  // ── RESET_WITH_RECOVERY ────────────────────────────────────────────────────
+  if (message.type === "RESET_WITH_RECOVERY") {
+    const { email, recoveryKey, newPassword } = message;
+
+    (async () => {
+      try {
+        // ── Step 1: call the server reset endpoint ──
+        // The server decrypts the old vault key with the recoveryKey,
+        // creates a new salt/hash for newPassword, and returns:
+        //   { ok, token, newSalt, vaultKey (base64 old key), newRecoveryKey }
+        const resp = await fetch(`${API_BASE}/auth/reset-with-recovery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            recoveryKey,
+            newMasterPassword: newPassword,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || "Reset failed.");
+
+        const { token, newSalt, vaultKey: oldVaultKeyB64, newRecoveryKey } = data;
+        if (!token || !newSalt || !oldVaultKeyB64) {
+          throw new Error("Incomplete response from server.");
+        }
+
+        // ── Step 2: reconstruct the OLD vault key from the server's response ──
+        // The server decrypted it with the recovery key and sent it back as base64.
+        const oldVaultKeyBytes = base64ToBytes(oldVaultKeyB64);
+        const oldKey = await crypto.subtle.importKey(
+          "raw",
+          oldVaultKeyBytes,
+          { name: "AES-GCM" },
+          false,
+          ["decrypt"]
+        );
+
+        // ── Step 3: decrypt all credentials using the OLD key ──
+        const allCredentials = await listAllCredentialRecordsWithKey(token, oldKey);
+
+        // ── Step 4: derive the NEW vault key from newPassword + server's newSalt ──
+        const newKey = await deriveVaultKey(newPassword, newSalt);
+
+        // ── Step 5: re-encrypt every credential with the new key ──
+        const updates = [];
+        for (const rec of allCredentials) {
+          const payload = JSON.stringify({
+            username: rec.decrypted.username,
+            password: rec.decrypted.password,
+          });
+          const bytes = new TextEncoder().encode(payload);
+          const iv = crypto.getRandomValues(new Uint8Array(12));
+          const ciphertext = await crypto.subtle.encrypt(
+            { name: "AES-GCM", iv },
+            newKey,
+            bytes
+          );
+          updates.push({
+            id: rec.id,
+            ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+            iv: bytesToBase64(iv),
+          });
+        }
+
+        // ── Step 6: persist re-encrypted credentials ──
+        if (updates.length > 0) {
+          const bulkResp = await fetch(`${API_BASE}/credentials/bulk`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ updates }),
+          });
+          if (!bulkResp.ok) {
+            const bulkData = await bulkResp.json().catch(() => ({}));
+            throw new Error(bulkData.error || "Bulk re-encryption failed.");
+          }
+        }
+
+        // ── Step 7: create a key-check so the new password can unlock later ──
+        const keyCheckResult = await createKeyCheck(newPassword, newSalt);
+
+        // ── Step 8: update in-memory state and session ──
+        derivedKey = newKey;
+        await storageSessionSet(SESSION_KEY, {
+          token,
+          salt: newSalt,
+          keyCheckCiphertext: keyCheckResult.keyCheckCiphertext,
+          keyCheckIv: keyCheckResult.keyCheckIv,
+        });
+        await touchActivity();
+
+        sendResponse({ ok: true, recoveryKey: newRecoveryKey });
+      } catch (err) {
+        console.error("RESET_WITH_RECOVERY error:", err);
+        sendResponse({ ok: false, error: err.message || "Recovery failed." });
       }
     })();
 
