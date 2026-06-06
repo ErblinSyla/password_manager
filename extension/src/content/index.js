@@ -1,6 +1,5 @@
 (() => {
 	if (globalThis.__pmContentScriptLoaded) {
-		// Avoid double-registering listeners if the script gets injected again.
 		console.debug("Password Manager content script already loaded");
 		return;
 	}
@@ -248,7 +247,6 @@ function isLikelyLoginForm(form, passwordField, usernameField) {
 	if (usernameField) return true;
 	if (hasLoginIntent(form)) return true;
 
-	// Fallback heuristic: many login forms have a submit button with text like “sign in”.
 	try {
 		const submit = form.querySelector('button[type="submit"], input[type="submit"]');
 		const text = safeLower(submit?.textContent || submit?.getAttribute?.("value") || "");
@@ -294,7 +292,6 @@ function classifyCredentialForm(form) {
 		return { mode: "login", username, password };
 	}
 
-	// Multi-password forms: treat only clear “current + new (+ confirm)” as password change.
 	const currentField = passwordFields.find(looksLikeCurrentPasswordField) || null;
 	let newField = passwordFields.find((f) => f !== currentField && looksLikeNewPasswordField(f)) || null;
 	if (newField && currentField && newField === currentField) {

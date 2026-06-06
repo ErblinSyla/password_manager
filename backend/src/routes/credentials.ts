@@ -7,13 +7,12 @@ const router = Router();
 
 router.use(authMiddleware);
 
-// POST /api/credentials — create new credential
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const { domain, ciphertext, iv } = req.body;
 
     if (!domain || !ciphertext || !iv) {
-      res.status(400).json({ error: "domain, ciphertext, and iv are required." });
+      res.status(400).json({ error: "Domain, ciphertext, and iv are required." });
       return;
     }
 
@@ -39,7 +38,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/credentials — get all credentials for the user
+// GET /api/credentials
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
     const credentials = await prisma.credential.findMany({
@@ -54,7 +53,6 @@ router.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/credentials/domain/:domain — get credentials for a specific domain
 router.get("/domain/:domain", async (req: AuthRequest, res: Response) => {
   try {
     const rawHostname = extractHostname(req.params.domain);
@@ -84,15 +82,6 @@ router.get("/domain/:domain", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/credentials/bulk — MUST be defined before /:id
-//
-// If /bulk is placed after router.put("/:id", ...), Express will match the
-// literal string "bulk" as an :id parameter and this route is never reached.
-// The update silently returns { ok: true, updatedCount: 0 } while credentials
-// remain encrypted with the old key, causing the vault to appear empty after
-// a master password change or recovery.
-// ─────────────────────────────────────────────────────────────────────────────
 router.put("/bulk", async (req: AuthRequest, res: Response) => {
   try {
     const { updates } = req.body;
@@ -104,7 +93,6 @@ router.put("/bulk", async (req: AuthRequest, res: Response) => {
 
     const userId = req.userId as string;
 
-    // Validate that every update belongs to this user before touching anything
     const ids = updates.map((u) => u.id).filter(Boolean);
     const owned = await prisma.credential.findMany({
       where: { id: { in: ids }, userId },
@@ -120,7 +108,6 @@ router.put("/bulk", async (req: AuthRequest, res: Response) => {
     );
 
     if (validUpdates.length === 0) {
-      // Nothing to update (e.g. user has no credentials yet — that's fine)
       res.json({ ok: true, updatedCount: 0 });
       return;
     }
@@ -141,7 +128,6 @@ router.put("/bulk", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// PUT /api/credentials/:id — update a single credential
 router.put("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const { domain, ciphertext, iv } = req.body;
@@ -181,7 +167,6 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// DELETE /api/credentials/:id — delete a credential
 router.delete("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.credential.findFirst({

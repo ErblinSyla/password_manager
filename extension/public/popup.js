@@ -27,7 +27,6 @@ const editFeedback = document.getElementById("edit-feedback");
 const editCancelButton = document.getElementById("edit-cancel-button");
 const editRevealButton = document.getElementById("edit-reveal-button");
 
-// ── Generator (edit panel) ────────────────────────────────────────────────────
 const editGenerateButton = document.getElementById("edit-generate-button");
 const generatorPanel = document.getElementById("generator-panel");
 const generatorPreview = document.getElementById("generator-preview");
@@ -40,12 +39,10 @@ const genUppercase = document.getElementById("gen-uppercase");
 const genNumbers = document.getElementById("gen-numbers");
 const genSymbols = document.getElementById("gen-symbols");
 
-// ── Generator (register form) ─────────────────────────────────────────────────
 const registerGenerateButton = document.getElementById("register-generate-button");
 const registerPasswordInput = document.getElementById("register-password");
 const confirmPasswordInput = document.getElementById("confirm-password");
 
-// ── Standalone generator panel ────────────────────────────────────────────────
 const standaloneGeneratorPanel = document.getElementById("standalone-generator-panel");
 const standaloneGeneratorClose = document.getElementById("standalone-generator-close");
 const standaloneGeneratorPreview = document.getElementById("standalone-generator-preview");
@@ -69,10 +66,6 @@ let pendingDeleteUntil = 0;
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PASSWORD GENERATOR CORE
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const CHAR_SETS = {
   lower:   "abcdefghijklmnopqrstuvwxyz",
   upper:   "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
@@ -93,7 +86,6 @@ const CHAR_SETS = {
  * @returns {string} The generated password
  */
 function generatePassword({ length = 20, uppercase = true, numbers = true, symbols = true } = {}) {
-  // Build the full alphabet and note required characters
   let alphabet = CHAR_SETS.lower;
   const required = [];
 
@@ -110,10 +102,8 @@ function generatePassword({ length = 20, uppercase = true, numbers = true, symbo
     required.push(pickRandom(CHAR_SETS.symbols));
   }
 
-  // Always require at least one lowercase
   required.push(pickRandom(CHAR_SETS.lower));
 
-  // Fill the rest randomly from the full alphabet
   const remaining = length - required.length;
   const chars = [...required];
 
@@ -121,19 +111,16 @@ function generatePassword({ length = 20, uppercase = true, numbers = true, symbo
     chars.push(pickRandom(alphabet));
   }
 
-  // Shuffle using Fisher-Yates with crypto random values
   shuffleArray(chars);
   return chars.join("");
 }
 
-/** Picks a single cryptographically random character from a string. */
 function pickRandom(str) {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return str[array[0] % str.length];
 }
 
-/** Fisher-Yates shuffle using crypto random values (in-place). */
 function shuffleArray(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const randomArr = new Uint32Array(1);
@@ -166,8 +153,6 @@ async function copyToClipboard(text, button) {
   }
 }
 
-// ─── Edit-panel generator ─────────────────────────────────────────────────────
-
 /** Reads current options from the edit-panel generator controls and regenerates. */
 function refreshEditGenerator() {
   if (!generatorPreview) return;
@@ -186,7 +171,6 @@ editGenerateButton?.addEventListener("click", () => {
   generatorPanel.hidden = !isHidden;
   if (isHidden) {
     refreshEditGenerator();
-    // Show the password so the user can see what they're about to use
     if (editPasswordInput) editPasswordInput.type = "text";
     if (editRevealButton) editRevealButton.textContent = "Hide";
   }
@@ -215,25 +199,18 @@ generatorUseButton?.addEventListener("click", () => {
   if (generatorPanel) generatorPanel.hidden = true;
 });
 
-// ─── Register-form generator (fills both password fields) ────────────────────
-
 registerGenerateButton?.addEventListener("click", () => {
   const pwd = generatePassword({ length: 20, uppercase: true, numbers: true, symbols: true });
   if (registerPasswordInput) {
     registerPasswordInput.value = pwd;
-    registerPasswordInput.type = "text"; // Reveal so user can see/copy it
+    registerPasswordInput.type = "text";
   }
   if (confirmPasswordInput) {
     confirmPasswordInput.value = pwd;
     confirmPasswordInput.type = "text";
   }
-  // Copy to clipboard automatically — convenient for onboarding
   copyToClipboard(pwd, registerGenerateButton);
 });
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PASSWORD STRENGTH METER
-// ═══════════════════════════════════════════════════════════════════════════════
 
 const strengthMeter = document.getElementById("strength-meter");
 const strengthLabel = document.getElementById("strength-label");
@@ -261,18 +238,15 @@ function scorePassword(pwd) {
 
   let score = 0;
 
-  // Length bonuses
   if (pwd.length >= 10) score++;
   if (pwd.length >= 16) score++;
 
-  // Character variety
   if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
   if (/[0-9]/.test(pwd)) score++;
   if (/[^a-zA-Z0-9]/.test(pwd)) score++;
 
-  // Penalty: very common patterns
   const commonWalks = /^(qwerty|asdf|zxcv|1234|abcd|password|letmein|iloveyou)/i;
-  const repeatedChars = /(.)\1{3,}/; // same char 4+ times in a row
+  const repeatedChars = /(.)\1{3,}/;
   if (commonWalks.test(pwd) || repeatedChars.test(pwd)) score = Math.max(0, score - 1);
 
   const clamped = Math.min(4, Math.max(0, score));
@@ -281,7 +255,6 @@ function scorePassword(pwd) {
   return { score: clamped, label: labels[clamped] };
 }
 
-// Score → visual config: how many segments to fill and what colour to use
 const STRENGTH_CONFIG = [
   { filled: 1, color: "#dc2626" }, // Weak     — red
   { filled: 2, color: "#d97706" }, // Fair     — amber
@@ -290,8 +263,7 @@ const STRENGTH_CONFIG = [
   { filled: 5, color: "#0f766e" }, // Very strong — accent teal
 ];
 
-// Minimum score the user must reach before the confirm field + submit unlock
-const MIN_SCORE_TO_PROCEED = 2; // "Good"
+const MIN_SCORE_TO_PROCEED = 2;
 
 function applyStrengthUI(score) {
   if (!strengthMeter || !strengthLabel || !strengthSegs.length) return;
@@ -300,7 +272,6 @@ function applyStrengthUI(score) {
   strengthMeter.hidden = isEmpty;
 
   if (isEmpty) {
-    // Lock confirm + submit when field is blank
     if (confirmPasswordInput) confirmPasswordInput.disabled = true;
     if (registerSubmitButton) registerSubmitButton.disabled = true;
     return;
@@ -318,40 +289,30 @@ function applyStrengthUI(score) {
     ? `${STRENGTH_CONFIG[score - 0]?.color ? "" : ""}${scorePassword._lastLabel || ""}`
     : "";
 
-  // Re-derive label text from the score index
   const labelText = ["Weak", "Fair", "Good", "Strong", "Very strong"][score] ?? "";
   strengthLabel.textContent = labelText;
   strengthLabel.style.color =
     score < MIN_SCORE_TO_PROCEED ? "#b45309" : score >= 3 ? "#0f766e" : "#1f2933";
 
-  // Gate confirm field and submit button on minimum strength
   const canProceed = score >= MIN_SCORE_TO_PROCEED;
   if (confirmPasswordInput) confirmPasswordInput.disabled = !canProceed;
   if (registerSubmitButton) registerSubmitButton.disabled = !canProceed;
 }
 
-// Wire up: score on every keystroke in the register password input
 registerPasswordInput?.addEventListener("input", () => {
   const pwd = registerPasswordInput.value;
   const { score } = scorePassword(pwd);
   applyStrengthUI(score);
 });
 
-// Also reset meter when the generate button fills the field
-// (We override the generate button handler defined earlier to also call applyStrengthUI)
 const _originalRegisterGenerateClick = registerGenerateButton?.onclick ?? null;
 registerGenerateButton?.addEventListener("click", () => {
-  // The generate handler already ran (event listeners fire in order).
-  // We just need to score whatever value ended up in the field.
   const pwd = registerPasswordInput?.value ?? "";
   const { score } = scorePassword(pwd);
   applyStrengthUI(score);
 });
 
-// Initialise hidden on load
 if (strengthMeter) strengthMeter.hidden = true;
-
-// ─── Standalone generator panel ───────────────────────────────────────────────
 
 function refreshStandaloneGenerator() {
   if (!standaloneGeneratorPreview) return;
@@ -384,10 +345,6 @@ standaloneGeneratorCopyButton?.addEventListener("click", () => {
 standaloneGeneratorClose?.addEventListener("click", () => {
   if (standaloneGeneratorPanel) standaloneGeneratorPanel.hidden = true;
 });
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXISTING POPUP LOGIC (unchanged except renderVaultItems — see below)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 function hasChromeRuntime() {
   return typeof chrome !== "undefined" && !!chrome.runtime && typeof chrome.runtime.sendMessage === "function";
@@ -582,70 +539,91 @@ function formatTimestamp(value) {
   return d.toLocaleString();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// VAULT ITEM RENDERING — now includes Copy username / Copy password buttons
-// ═══════════════════════════════════════════════════════════════════════════════
+const ICONS = {
+  // Lightning bolt — autofill
+  fill: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  // Person — copy username
+  copyUser: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+  // Key — copy password
+  copyPass: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>`,
+  // Pencil — edit
+  edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  // Star — set default
+  star: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+  // Trash — delete
+  trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+  // Check — confirm delete
+  check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  // Clipboard check — copied feedback
+  copied: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+};
 
+function makeVaultIconButton(iconHtml, title, extraClass = "") {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "vault-icon-btn" + (extraClass ? " " + extraClass : "");
+  btn.title = title;
+  btn.setAttribute("aria-label", title);
+  btn.innerHTML = iconHtml;
+  return btn;
+}
+ 
 function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } = {}) {
-  if (!vaultList) {
-    return;
-  }
-
+  if (!vaultList) return;
+ 
   vaultList.innerHTML = "";
-
+ 
   if (!Array.isArray(credentials) || credentials.length === 0) {
-    clearVaultList("No saved credentials for this site yet.");
+    clearVaultList("No saved credentials yet.");
     return;
   }
-
+ 
   for (const cred of credentials) {
     const article = document.createElement("article");
     article.className = "vault-item";
-
-    // ── Left column: identity info ─────────────────────────────────────────
-    const left = document.createElement("div");
+ 
+    const info = document.createElement("div");
+    info.className = "vault-item-info";
+ 
     const title = document.createElement("strong");
+    title.className = "vault-item-username";
     title.textContent = String(cred?.usernameLabel || cred?.username || "(no username)");
+ 
     const meta = document.createElement("p");
-    const defaultText = cred?.isDefault ? "Default. " : "";
-    meta.textContent = `${defaultText}${cred?.domain || "(unknown)"}${cred?.createdAt ? `, saved ${formatTimestamp(cred.createdAt)}` : ""}`;
-    left.appendChild(title);
-    left.appendChild(meta);
-
-    // ── Right column: action buttons ───────────────────────────────────────
+    meta.className = "vault-item-domain";
+    const badge = cred?.isDefault
+      ? `<span class="default-badge" title="Default credential">★</span> `
+      : "";
+    meta.innerHTML = `${badge}${cred?.domain || "(unknown)"}`;
+ 
+    info.appendChild(title);
+    info.appendChild(meta);
+ 
     const actions = document.createElement("div");
     actions.className = "vault-item-actions";
-
-    // Fill button
-    const fillBtn = document.createElement("button");
-    fillBtn.type = "button";
-    fillBtn.textContent = "Fill";
+ 
+    const fillBtn = makeVaultIconButton(ICONS.fill, "Autofill this credential");
     fillBtn.addEventListener("click", () => onFill?.(cred));
     actions.appendChild(fillBtn);
-
-    // ── NEW: Copy username button ──────────────────────────────────────────
-    const copyUserBtn = document.createElement("button");
-    copyUserBtn.type = "button";
-    copyUserBtn.textContent = "Copy user";
-    copyUserBtn.title = "Copy username to clipboard";
+ 
+    const copyUserBtn = makeVaultIconButton(ICONS.copyUser, "Copy username");
     copyUserBtn.addEventListener("click", async () => {
       const username = cred?.username || cred?.usernameLabel || "";
-      await copyToClipboard(username, copyUserBtn);
+      const prevHTML = copyUserBtn.innerHTML;
+      await copyToClipboard(username, null);
+      copyUserBtn.innerHTML = ICONS.copied;
+      copyUserBtn.classList.add("is-success");
+      setTimeout(() => {
+        copyUserBtn.innerHTML = prevHTML;
+        copyUserBtn.classList.remove("is-success");
+      }, 1500);
     });
     actions.appendChild(copyUserBtn);
-
-    // ── NEW: Copy password button ─────────────────────────────────────────
-    // We need the decrypted password — request it via GET_CREDENTIAL_FOR_EDIT
-    // which the background already exposes. We fetch on-demand (click) to
-    // avoid keeping plaintext in the DOM longer than necessary.
-    const copyPassBtn = document.createElement("button");
-    copyPassBtn.type = "button";
-    copyPassBtn.textContent = "Copy pass";
-    copyPassBtn.title = "Copy password to clipboard";
+ 
+    const copyPassBtn = makeVaultIconButton(ICONS.copyPass, "Copy password");
     copyPassBtn.addEventListener("click", async () => {
-      copyPassBtn.textContent = "…";
+      const prevHTML = copyPassBtn.innerHTML;
       copyPassBtn.disabled = true;
-
       try {
         const hostnameToFetch = showAllCredentials ? null : activeHostname;
         const response = await sendMessage({
@@ -653,62 +631,50 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
           hostname: hostnameToFetch,
           id: String(cred?.id || ""),
         });
-
-        if (!response?.ok) {
-          copyPassBtn.textContent = "Error";
-          setTimeout(() => {
-            copyPassBtn.textContent = "Copy pass";
-            copyPassBtn.disabled = false;
-          }, 1500);
-          return;
-        }
-
-        await copyToClipboard(response.credential?.password ?? "", copyPassBtn);
+        if (!response?.ok) throw new Error();
+        await copyToClipboard(response.credential?.password ?? "", null);
+        copyPassBtn.innerHTML = ICONS.copied;
+        copyPassBtn.classList.add("is-success");
+        setTimeout(() => {
+          copyPassBtn.innerHTML = prevHTML;
+          copyPassBtn.classList.remove("is-success");
+          copyPassBtn.disabled = false;
+        }, 1500);
       } catch {
-        copyPassBtn.textContent = "Copy pass";
+        copyPassBtn.innerHTML = prevHTML;
         copyPassBtn.disabled = false;
       }
     });
     actions.appendChild(copyPassBtn);
-
-    // Edit button
+ 
     if (typeof onEdit === "function") {
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.textContent = "Edit";
+      const editBtn = makeVaultIconButton(ICONS.edit, "Edit credential");
       editBtn.addEventListener("click", () => onEdit?.(cred));
       actions.appendChild(editBtn);
     }
-
-    // Default button
+ 
     if (typeof onDefault === "function" && !cred?.isDefault) {
-      const defaultBtn = document.createElement("button");
-      defaultBtn.type = "button";
-      defaultBtn.textContent = "Default";
+      const defaultBtn = makeVaultIconButton(ICONS.star, "Set as default");
       defaultBtn.addEventListener("click", () => onDefault?.(cred));
       actions.appendChild(defaultBtn);
     }
-
-    // Delete button
+ 
     if (typeof onDelete === "function") {
-      const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
       const isPendingDelete = pendingDeleteId === cred?.id && Date.now() < pendingDeleteUntil;
-      deleteBtn.textContent = isPendingDelete ? "Confirm" : "Delete";
-      deleteBtn.classList.toggle("danger-button", isPendingDelete);
+      const deleteBtn = makeVaultIconButton(
+        isPendingDelete ? ICONS.check : ICONS.trash,
+        isPendingDelete ? "Confirm delete" : "Delete credential",
+        isPendingDelete ? "is-danger" : ""
+      );
       deleteBtn.addEventListener("click", () => onDelete?.(cred));
       actions.appendChild(deleteBtn);
     }
-
-    article.appendChild(left);
+ 
+    article.appendChild(info);
     article.appendChild(actions);
     vaultList.appendChild(article);
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// REST OF EXISTING LOGIC — unchanged
-// ═══════════════════════════════════════════════════════════════════════════════
 
 function filterCredentials(credentials, query) {
   const q = String(query || "").trim().toLowerCase();
@@ -855,7 +821,6 @@ function openCredentialEditor({ id, username, password }) {
     editPasswordInput.value = password || "";
   }
   if (editRevealButton) editRevealButton.textContent = "Show";
-  // Reset generator panel state whenever the editor opens
   if (generatorPanel) generatorPanel.hidden = true;
   setEditFeedback("");
   if (credentialEditor) credentialEditor.hidden = false;
@@ -1276,8 +1241,6 @@ async function handleSignIn(event) {
         keyCheckIv: keyCheckResp.keyCheckIv,
       });
  
-      // Auto-unlock immediately — the user already proved their identity
-      // with the master password, so asking them to type it again is redundant.
       const unlockResp = await sendMessage({
         type: "UNLOCK",
         masterPassword: password,
@@ -1293,7 +1256,6 @@ async function handleSignIn(event) {
         reportActivity();
         void refreshActiveTabAutofillState();
       } else {
-        // Unlock failed for some reason — fall back to locked state gracefully
         setViewState({ isAuthed: true, isUnlocked: false });
         setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
         feedback.textContent = "Signed in. Please unlock your vault.";
@@ -1357,7 +1319,6 @@ async function handleRegister(event) {
         keyCheckIv: keyCheckResp.keyCheckIv,
       });
  
-      // Auto-unlock immediately after registration too
       const unlockResp = await sendMessage({
         type: "UNLOCK",
         masterPassword: password,
@@ -1528,11 +1489,6 @@ vaultScopeButtons.forEach((btn) => {
   });
 });
 
-// ============================================================
-// NEW: Forgot password & Change master password handlers
-// ============================================================
-
-// Show Forgot Password modal
 function handleForgotPassword() {
   const modal = document.getElementById("forgot-password-modal");
   const emailInput = document.getElementById("fp-email");
@@ -1546,7 +1502,6 @@ function handleForgotPassword() {
 
   if (!modal) return;
 
-  // Reset
   emailInput.value = "";
   recoveryKeyInput.value = "";
   newPwdInput.value = "";
@@ -1614,7 +1569,6 @@ function handleForgotPassword() {
   emailInput.focus();
 }
 
-// Show Change Password modal
 function showChangePasswordModal() {
   const modal = document.getElementById("change-password-modal");
   const oldPwdInput = document.getElementById("cp-old-password");
@@ -1627,7 +1581,6 @@ function showChangePasswordModal() {
 
   if (!modal) return;
 
-  // Reset form
   oldPwdInput.value = "";
   newPwdInput.value = "";
   confirmInput.value = "";
@@ -1635,7 +1588,6 @@ function showChangePasswordModal() {
 
   const closeModal = () => {
     modal.hidden = true;
-    // Remove listeners to avoid duplicates
     submitBtn.onclick = null;
     cancelBtn.onclick = null;
     closeBtn.onclick = null;
@@ -1689,7 +1641,6 @@ function showChangePasswordModal() {
   oldPwdInput.focus();
 }
 
-// Recovery key modal handling
 let pendingRecoveryKey = null;
 let pendingCallback = null;
 
@@ -1707,7 +1658,6 @@ function showRecoveryKeyModal(recoveryKey, onConfirm) {
 
   display.textContent = recoveryKey;
 
-  // Copy handler
   const copyHandler = () => {
     navigator.clipboard.writeText(recoveryKey);
     copyBtn.textContent = "Copied!";
@@ -1715,13 +1665,11 @@ function showRecoveryKeyModal(recoveryKey, onConfirm) {
   };
   copyBtn.onclick = copyHandler;
 
-  // Confirm / close handlers
   const closeModal = () => {
     modal.hidden = true;
     if (pendingCallback) pendingCallback();
     pendingRecoveryKey = null;
     pendingCallback = null;
-    // Clean up listeners
     confirmBtn.onclick = null;
     closeBtn.onclick = null;
     copyBtn.onclick = null;
@@ -1735,7 +1683,6 @@ function showRecoveryKeyModal(recoveryKey, onConfirm) {
 window.addEventListener("mousemove", reportActivity);
 window.addEventListener("keydown", reportActivity);
 window.addEventListener("click", reportActivity);
-// Attach change password and forgot password handlers
 document.getElementById("change-password-button")?.addEventListener("click", showChangePasswordModal);
 document.getElementById("forgot-password-link")?.addEventListener("click", (e) => {
   e.preventDefault();

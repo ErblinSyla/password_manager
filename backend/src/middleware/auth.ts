@@ -15,7 +15,7 @@ export const authMiddleware = (
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Token mungon" });
+    res.status(401).json({ error: "Missing token" });
     return;
   }
 
@@ -31,6 +31,6 @@ export const authMiddleware = (
     req.userEmail = decoded.email;
     next();
   } catch {
-    res.status(401).json({ error: "Token i pavlefshëm" });
+    res.status(401).json({ error: "Invalid token" });
   }
 };

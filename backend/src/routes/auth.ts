@@ -32,13 +32,13 @@ router.post("/register", async (req: Request, res: Response) => {
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
     if (!normalizedEmail || typeof password !== "string" || password.length < 8) {
-      res.status(400).json({ error: "Email dhe një password me të paktën 8 karaktere janë të nevojshme" });
+      res.status(400).json({ error: "Email and password with at least 8 characters required" });
       return;
     }
 
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
-      res.status(409).json({ error: "Ky email është i regjistruar" });
+      res.status(409).json({ error: "Email is already registered" });
       return;
     }
 
@@ -51,10 +51,8 @@ router.post("/register", async (req: Request, res: Response) => {
 
     const recoveryKey = randomBytes(32).toString("hex");
 
-    // Derive vault key from master password (same as client)
     const vaultKey = deriveVaultKeyForBackend(password, resolvedSalt);
 
-    // Encrypt vault key with recovery key
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", Buffer.from(recoveryKey, "hex"), iv);
     const encrypted = Buffer.concat([cipher.update(vaultKey), cipher.final()]);
@@ -88,19 +86,19 @@ router.post("/login", async (req: Request, res: Response) => {
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
     if (!normalizedEmail || typeof password !== "string" || password.length === 0) {
-      res.status(400).json({ error: "Email dhe password janë të nevojshme" });
+      res.status(400).json({ error: "Email and password are required" });
       return;
     }
 
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
-      res.status(401).json({ error: "Email ose password i gabuar" });
+      res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 
     const validPassword = await argon2.verify(user.passwordHash, password);
     if (!validPassword) {
-      res.status(401).json({ error: "Email ose password i gabuar" });
+      res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 
@@ -125,7 +123,7 @@ router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
     });
 
     if (!user) {
-      res.status(404).json({ error: "Përdoruesi nuk u gjet" });
+      res.status(404).json({ error: "User not found" });
       return;
     }
 
@@ -148,7 +146,6 @@ router.post("/change-password", authMiddleware, async (req: AuthRequest, res: Re
     const newSalt = randomBytes(16).toString("hex");
     const newPasswordHash = await argon2.hash(newPassword);
 
-    // Re‑encrypt the vault key with the new master password
     const newVaultKey = deriveVaultKeyForBackend(newPassword, newSalt);
     const recoveryKey = randomBytes(32).toString("hex");
     const iv = randomBytes(12);
@@ -168,22 +165,12 @@ router.post("/change-password", authMiddleware, async (req: AuthRequest, res: Re
       },
     });
 
-    res.json({ ok: true, newSalt, recoveryKey }); // return new recovery key to client (show once)
+    res.json({ ok: true, newSalt, recoveryKey });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
-// REPLACE the entire router.post("/reset-with-recovery", ...) handler in
-// your backend auth.ts with this corrected version.
-//
-// The original bug: the server derived a brand-new vaultKey from the new
-// password instead of decrypting the EXISTING vault key from the recovery blob
-// and sending that back to the client. The client needs the old key to be able
-// to decrypt existing credentials before re-encrypting them.
-// ─────────────────────────────────────────────────────────────────────────────
 
 router.post("/reset-with-recovery", async (req: Request, res: Response) => {
   try {
@@ -204,7 +191,6 @@ router.post("/reset-with-recovery", async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      // Return the same error as an invalid key to avoid user enumeration
       res.status(401).json({ error: "Invalid recovery key or email." });
       return;
     }
@@ -214,14 +200,11 @@ router.post("/reset-with-recovery", async (req: Request, res: Response) => {
       return;
     }
 
-    // ── Step 1: decrypt the OLD vault key using the provided recovery key ──
-    // The vault key was AES-256-GCM encrypted with the recovery key at signup.
     let oldVaultKey: Buffer;
     try {
       const iv = Buffer.from(user.encryptedVaultKeyIv, "base64");
       const encryptedBlob = Buffer.from(user.encryptedVaultKey, "base64");
 
-      // Last 16 bytes are the GCM auth tag
       const authTag = encryptedBlob.slice(-16);
       const ciphertext = encryptedBlob.slice(0, -16);
 
@@ -234,20 +217,13 @@ router.post("/reset-with-recovery", async (req: Request, res: Response) => {
 
       oldVaultKey = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     } catch {
-      // GCM auth tag mismatch → wrong recovery key
       res.status(401).json({ error: "Invalid recovery key or email." });
       return;
     }
 
-    // ── Step 2: create new credentials (salt, password hash) ──
     const newSalt = randomBytes(16).toString("hex");
     const newPasswordHash = await argon2.hash(newMasterPassword);
-
-    // ── Step 3: derive the NEW vault key from the new master password + newSalt ──
-    // The client will also derive this key so it can re-encrypt credentials.
     const newVaultKey = deriveVaultKeyForBackend(newMasterPassword, newSalt);
-
-    // ── Step 4: generate a new recovery key and store the new vault key encrypted ──
     const newRecoveryKey = randomBytes(32).toString("hex");
     const newIv = randomBytes(12);
     const cipher = createCipheriv(
@@ -262,7 +238,6 @@ router.post("/reset-with-recovery", async (req: Request, res: Response) => {
     const newAuthTag = cipher.getAuthTag();
     const encryptedVaultKeyB64 = Buffer.concat([encryptedNewVaultKey, newAuthTag]).toString("base64");
 
-    // ── Step 5: persist all changes ──
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -273,18 +248,13 @@ router.post("/reset-with-recovery", async (req: Request, res: Response) => {
       },
     });
 
-    // ── Step 6: issue a new JWT ──
     const token = createToken(user.id, user.email);
 
-    // ── Step 7: return the OLD vault key (base64) so the client can
-    //    decrypt existing credentials before re-encrypting with the new key.
-    //    This is the critical piece the original code got wrong — it was
-    //    sending a freshly derived key instead of the decrypted old key.
     res.json({
       ok: true,
       token,
       newSalt,
-      vaultKey: oldVaultKey.toString("base64"),  // ← old key, not new key
+      vaultKey: oldVaultKey.toString("base64"),
       newRecoveryKey,
     });
   } catch (error) {

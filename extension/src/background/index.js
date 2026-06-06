@@ -95,10 +95,8 @@ async function touchActivity() {
   }
   await storageSessionSet(LAST_ACTIVITY_KEY, Date.now());
  
-  // Skip scheduling auto-lock when the user chose "Remember Me"
   const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
   if (rememberMe === true) {
-    // Clear any existing alarm so it never fires
     chrome.alarms.clear(AUTO_LOCK_ALARM);
     return;
   }
@@ -355,7 +353,6 @@ async function listCredentialRecordsForHostname(token, hostname) {
       const record = await decryptCredentialRecord(cred);
       if (record) out.push(record);
     } catch {
-      // Skip records that cannot be decrypted with the current vault key.
     }
   }
   return out;
@@ -373,7 +370,6 @@ async function listAllCredentialRecords(token) {
       const record = await decryptCredentialRecord(cred);
       if (record) out.push(record);
     } catch {
-      // Skip records that cannot be decrypted with the current vault key.
     }
   }
   return out;
@@ -1073,7 +1069,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (normalizedIncomingUser) {
             return usernamesEqual(c.decrypted?.username, normalizedIncomingUser);
           }
-          // No username: treat as duplicate only if the stored username is also empty.
           return !normalizeUsername(c.decrypted?.username);
         });
 
@@ -1087,7 +1082,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (normalizedIncomingUser) {
           updateTarget = decryptedExisting.find((c) => usernamesEqual(c.decrypted?.username, normalizedIncomingUser)) || null;
         } else {
-          // If username is missing and there is exactly one credential for this domain, update it.
           if (decryptedExisting.length === 1) {
             updateTarget = decryptedExisting[0];
           }
@@ -1117,17 +1111,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-// DROP-IN REPLACEMENT for the two broken message handlers in background/index.js
-//
-// Replace the entire:
-//   if (message.type === "CHANGE_MASTER_PASSWORD") { ... }
-// and
-//   if (message.type === "RESET_WITH_RECOVERY") { ... }
-// blocks with the two blocks below.
-// ─────────────────────────────────────────────────────────────────────────────
-
-  // ── CHANGE_MASTER_PASSWORD ──────────────────────────────────────────────────
   if (message.type === "CHANGE_MASTER_PASSWORD") {
     const { oldPassword, newPassword } = message;
 
@@ -1140,16 +1123,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const token = await readAuthToken();
         if (!token) throw new Error("Not signed in.");
-
-        // ── Step 1: decrypt all credentials with the CURRENT in-memory key ──
-        // We already have derivedKey (the current key) in RAM — use it directly
-        // via the existing helper so we don't need the old salt at all.
         const allRecords = await listAllCredentialRecords(token);
-
-        // ── Step 2: tell the server to change the password hash + get newSalt ──
-        // We do this BEFORE re-encrypting so we have the authoritative newSalt
-        // from the server.  The server also re-derives/re-stores the vault key
-        // for its own recovery path, but the client drives the real key.
         const changeResp = await fetch(`${API_BASE}/auth/change-password`, {
           method: "POST",
           headers: {
@@ -1164,10 +1138,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const newSalt = changeData.newSalt;
         if (!newSalt) throw new Error("Server did not return a new salt.");
 
-        // ── Step 3: derive the new vault key from newPassword + SERVER's newSalt ──
         const newKey = await deriveVaultKey(newPassword, newSalt);
 
-        // ── Step 4: re-encrypt every credential with the new key ──
         const updates = [];
         for (const rec of allRecords) {
           const payload = JSON.stringify({
@@ -1188,7 +1160,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         }
 
-        // ── Step 5: persist re-encrypted credentials ──
         if (updates.length > 0) {
           const bulkResp = await fetch(`${API_BASE}/credentials/bulk`, {
             method: "PUT",
@@ -1204,15 +1175,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
-        // ── Step 6: create a fresh key-check so the new password can unlock ──
         const keyCheckResult = await createKeyCheck(newPassword, newSalt);
 
-        // ── Step 7: update in-memory state ──
         derivedKey = newKey;
         await touchActivity();
 
-        // ── Step 8: write updated session so popup can build a new key-check ──
-        // We must persist newSalt + keyCheck so the UNLOCK flow works after reload.
         const existingSession = await storageSessionGet(SESSION_KEY);
         await storageSessionSet(SESSION_KEY, {
           ...(existingSession || {}),
@@ -1232,16 +1199,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // ── RESET_WITH_RECOVERY ────────────────────────────────────────────────────
   if (message.type === "RESET_WITH_RECOVERY") {
     const { email, recoveryKey, newPassword } = message;
 
     (async () => {
       try {
-        // ── Step 1: call the server reset endpoint ──
-        // The server decrypts the old vault key with the recoveryKey,
-        // creates a new salt/hash for newPassword, and returns:
-        //   { ok, token, newSalt, vaultKey (base64 old key), newRecoveryKey }
         const resp = await fetch(`${API_BASE}/auth/reset-with-recovery`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1259,8 +1221,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error("Incomplete response from server.");
         }
 
-        // ── Step 2: reconstruct the OLD vault key from the server's response ──
-        // The server decrypted it with the recovery key and sent it back as base64.
         const oldVaultKeyBytes = base64ToBytes(oldVaultKeyB64);
         const oldKey = await crypto.subtle.importKey(
           "raw",
@@ -1270,13 +1230,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ["decrypt"]
         );
 
-        // ── Step 3: decrypt all credentials using the OLD key ──
         const allCredentials = await listAllCredentialRecordsWithKey(token, oldKey);
-
-        // ── Step 4: derive the NEW vault key from newPassword + server's newSalt ──
         const newKey = await deriveVaultKey(newPassword, newSalt);
-
-        // ── Step 5: re-encrypt every credential with the new key ──
         const updates = [];
         for (const rec of allCredentials) {
           const payload = JSON.stringify({
@@ -1297,7 +1252,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         }
 
-        // ── Step 6: persist re-encrypted credentials ──
         if (updates.length > 0) {
           const bulkResp = await fetch(`${API_BASE}/credentials/bulk`, {
             method: "PUT",
@@ -1313,10 +1267,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
-        // ── Step 7: create a key-check so the new password can unlock later ──
         const keyCheckResult = await createKeyCheck(newPassword, newSalt);
 
-        // ── Step 8: update in-memory state and session ──
         derivedKey = newKey;
         await storageSessionSet(SESSION_KEY, {
           token,
@@ -1342,10 +1294,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         await storageLocalSet(REMEMBER_ME_KEY, rememberMe);
         if (rememberMe) {
-          // Clear the alarm immediately so it won't fire mid-session
           chrome.alarms.clear(AUTO_LOCK_ALARM);
         } else {
-          // Re-arm the alarm now that remember-me is off
           await scheduleAutoLockFromLastActivity();
         }
         sendResponse?.({ ok: true });
