@@ -124,6 +124,16 @@ function setLoading(el, label = "") {
   el.innerHTML = label ? `${label} ${LOADER_HTML}` : LOADER_HTML;
 }
 
+function showPageLoader() {
+  const loader = document.getElementById('page-loader');
+  if (loader) loader.hidden = false;
+}
+
+function hidePageLoader() {
+  const loader = document.getElementById('page-loader');
+  if (loader) loader.hidden = true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Password generator core
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,7 +938,10 @@ async function apiRequest(path, options = {}) {
 }
 
 async function refreshSessionState() {
-  const session = await readSession();
+
+  showPageLoader();
+  try{
+    const session = await readSession();
 
   if (!session?.token) {
     await clearVaultKey();
@@ -975,6 +988,10 @@ async function refreshSessionState() {
   } catch {
     await signOut({ title: "Session expired", message: "Please sign in again.", isError: true });
   }
+  } finally {
+    hidePageLoader();
+  }
+  
 }
 
 function attachAuthFeedback(form) {
