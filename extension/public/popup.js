@@ -106,6 +106,7 @@ let currentVaultToken = null;
 let editingCredentialId = null;
 let pendingDeleteId = null;
 let pendingDeleteUntil = 0;
+let currentPageHasLoginFields = false;
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
@@ -427,12 +428,43 @@ function setViewState({ isAuthed, isUnlocked }) {
   if (changePasswordButton) changePasswordButton.hidden = !isAuthed || !isUnlocked;
 }
 
+function updateFillButtonsState() {
+  const shouldEnable = currentPageHasLoginFields;
+
+  // Main autofill button
+  if (autofillButton) {
+    autofillButton.disabled = !shouldEnable;
+    autofillButton.title = shouldEnable 
+      ? "Autofill credentials on current page" 
+      : "No login fields detected on this page";
+  }
+
+  // Individual fill buttons in vault list
+  const fillButtons = document.querySelectorAll('.vault-icon-btn[title="Autofill this credential"]');
+  fillButtons.forEach(btn => {
+    btn.disabled = !shouldEnable;
+    if (!shouldEnable) {
+      btn.title = "No login fields detected on this page";
+    } else {
+      btn.title = "Autofill this credential";
+    }
+  });
+}
+
 function setDetectedSiteLabels({ url, fieldStatusText }) {
   const domain = (() => { try { return url ? new URL(url).hostname : "-"; } catch { return "-"; } })();
   activeHostname = domain && domain !== "-" ? domain : null;
+
   if (detectedPageLabel) detectedPageLabel.textContent = domain;
   if (siteDomainLabel) siteDomainLabel.textContent = domain;
   if (siteFieldsStatusLabel) siteFieldsStatusLabel.textContent = fieldStatusText || "-";
+
+  // Track whether current page has login fields
+  currentPageHasLoginFields = fieldStatusText && 
+    (fieldStatusText.includes("Login fields found") || 
+     fieldStatusText.includes("Password field found"));
+
+  updateFillButtonsState();
 }
 
 function setSavedCount(count, subtitle) {
@@ -494,6 +526,7 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
 
   if (!Array.isArray(credentials) || credentials.length === 0) {
     clearVaultList("No saved credentials yet.");
+    updateFillButtonsState(); // still call it
     return;
   }
 
@@ -519,7 +552,7 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
     const actions = document.createElement("div");
     actions.className = "vault-item-actions";
 
-    // Fill
+    // Fill button
     const fillBtn = makeVaultIconButton(ICONS.fill, "Autofill this credential");
     fillBtn.addEventListener("click", () => onFill?.(cred));
     actions.appendChild(fillBtn);
@@ -575,6 +608,9 @@ function renderVaultItems(credentials, { onFill, onEdit, onDelete, onDefault } =
     article.appendChild(actions);
     vaultList.appendChild(article);
   }
+
+  // Update fill button states after rendering the list
+  updateFillButtonsState();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -710,6 +746,7 @@ async function refreshVaultView() {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "";
     clearVaultList("Please sign in to view credentials.");
+    updateFillButtonsState(); // added
     return;
   }
 
@@ -745,6 +782,7 @@ async function refreshVaultView() {
       setSavedCount(null, "For this site");
       if (vaultPill) vaultPill.textContent = "";
       clearVaultList("Open a website tab to see saved credentials for that domain, or switch to 'All sites'.");
+      updateFillButtonsState(); // added
       return;
     }
 
@@ -754,10 +792,15 @@ async function refreshVaultView() {
     lastVaultCredentials = Array.isArray(credentials) ? credentials : [];
     const filtered = filterCredentials(lastVaultCredentials, vaultSearchInput?.value);
     renderVaultItems(filtered, { onFill: handleVaultFill, onEdit: handleVaultEdit, onDelete: handleVaultDelete, onDefault: handleVaultDefault });
+    
+    // Make sure buttons are updated
+    updateFillButtonsState();
+    
   } catch (e) {
     setSavedCount(null, "For this site");
     if (vaultPill) vaultPill.textContent = "Error";
     clearVaultList(e instanceof Error ? e.message : "Unable to load credentials.");
+    updateFillButtonsState(); // added
   }
 }
 
