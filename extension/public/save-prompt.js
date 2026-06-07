@@ -1,3 +1,17 @@
+// save-prompt.js
+// Cross-browser shim: Firefox uses `browser`, Chrome/Edge/Safari use `chrome`
+const _rt = (() => {
+  if (typeof browser !== "undefined" && browser.runtime) return browser.runtime;
+  return {
+    sendMessage: (msg) =>
+      new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(msg, (response) => resolve(response || null));
+        } catch { resolve(null); }
+      }),
+  };
+})();
+
 const form = document.getElementById("save-form");
 const title = document.getElementById("save-title");
 const domainLabel = document.getElementById("save-domain");
@@ -12,13 +26,7 @@ const cancelButton = document.getElementById("save-cancel");
 let pending = null;
 
 function sendMessage(message) {
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendMessage(message, (response) => resolve(response || null));
-    } catch {
-      resolve(null);
-    }
-  });
+  return _rt.sendMessage(message).catch(() => null);
 }
 
 function setFeedback(message, isError = false) {
@@ -79,9 +87,7 @@ async function init() {
 }
 
 form?.addEventListener("change", (event) => {
-  if (event.target?.name === "action") {
-    selectAction(event.target.value);
-  }
+  if (event.target?.name === "action") selectAction(event.target.value);
 });
 
 form?.addEventListener("submit", async (event) => {
@@ -97,10 +103,7 @@ form?.addEventListener("submit", async (event) => {
   setFeedback("");
   const response = await sendMessage({
     type: "RESOLVE_PENDING_SAVE",
-    action,
-    targetId,
-    username,
-    password,
+    action, targetId, username, password,
     makeDefault: !!defaultCheckbox?.checked,
   });
 
