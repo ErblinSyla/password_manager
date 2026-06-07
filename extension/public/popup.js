@@ -1058,33 +1058,29 @@ async function handleRegister(event) {
   const confirmPassword = String(formData.get("confirm-password") || "");
   feedback.textContent = "";
   feedback.classList.remove("is-error");
-  if (password !== confirmPassword) { feedback.textContent = "Passwords do not match."; feedback.classList.add("is-error"); return; }
+  if (password !== confirmPassword) {
+    feedback.textContent = "Passwords do not match.";
+    feedback.classList.add("is-error");
+    return;
+  }
   try {
-    const data = await apiRequest("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
-    if (hasBrowserRuntime()) {
-      const keyCheckResp = await sendMessage({ type: "CREATE_KEY_CHECK", masterPassword: password, salt: data.salt });
-      if (!keyCheckResp?.ok) throw new Error(keyCheckResp?.error || "Unable to initialize vault session");
-      await writeSession({ ...data, keyCheckCiphertext: keyCheckResp.keyCheckCiphertext, keyCheckIv: keyCheckResp.keyCheckIv });
-      const unlockResp = await sendMessage({ type: "UNLOCK", masterPassword: password, salt: data.salt, keyCheckCiphertext: keyCheckResp.keyCheckCiphertext, keyCheckIv: keyCheckResp.keyCheckIv });
-      if (unlockResp?.ok) {
-        setViewState({ isAuthed: true, isUnlocked: true });
-        setStatus("Unlocked", `Welcome, ${data.user.email}. Your vault is ready.`);
-        feedback.textContent = "Account created and vault unlocked.";
-        reportActivity();
-        void refreshActiveTabAutofillState();
-      } else {
-        setViewState({ isAuthed: true, isUnlocked: false });
-        setStatus("Vault locked", `Signed in as ${data.user.email}. Unlock to view passwords.`);
-        feedback.textContent = "Account created. Please unlock your vault.";
-        reportActivity();
-      }
-    } else {
-      await writeSession(data);
-      setViewState({ isAuthed: true, isUnlocked: true });
-      setStatus("Signed in", `Welcome, ${data.user.email}.`);
-      reportActivity();
-    }
-    feedback.textContent = feedback.textContent || "Account created.";
+    const data = await apiRequest("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+
+    // Show the recovery key modal and, after closing, reset to sign‑in
+    showRecoveryKeyModal(data.recoveryKey, () => {
+      setActiveTab("sign-in");
+      registerForm.reset();
+      // reset strength meter
+      if (strengthMeter) strengthMeter.hidden = true;
+      if (registerPasswordInput) registerPasswordInput.value = "";
+      if (confirmPasswordInput) confirmPasswordInput.value = "";
+      setStatus("Account created", "You can now sign in with your master password.");
+    });
+
+    feedback.textContent = "Account created. Please sign in.";
   } catch (e) {
     feedback.textContent = e instanceof Error ? e.message : "Unable to create account.";
     feedback.classList.add("is-error");

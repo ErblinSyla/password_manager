@@ -1038,3 +1038,12 @@ button, input { font: inherit; }
   color: #334155;
   font-size: 14px;
 }
+
+.forgot-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.14s;
+}
