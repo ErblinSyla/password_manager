@@ -139,6 +139,28 @@ async function storageLocalSet(key, value) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Badge indicator (toolbar icon overlay)
+// Shows a coloured circle: green when signed in (any state), red when signed out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function updateBadge() {
+  // Use the session token to determine if the user is signed in
+  const result = await storageSessionGetMany([SESSION_KEY]);
+  const session = result?.[SESSION_KEY] ?? null;
+  const isSignedIn = !!session?.token;
+
+  if (isSignedIn) {
+    // Green circle for signed in
+    chrome.action.setBadgeBackgroundColor({ color: "#22c55e" });
+    chrome.action.setBadgeText({ text: "●" });
+  } else {
+    // Red circle for signed out / no session
+    chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+    chrome.action.setBadgeText({ text: "●" });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Auto-lock
 // FIX: Always check rememberMe before scheduling or firing the alarm.
 //      The previous code ran scheduleAutoLockFromLastActivity() unconditionally
@@ -185,6 +207,7 @@ async function touchActivity() {
 
 async function lockNow(reason) {
   derivedKey = null;
+  await updateBadge();
   await storageSessionRemove([LAST_ACTIVITY_KEY]);
   await _api.alarms.clear(AUTO_LOCK_ALARM);
   console.debug("Vault locked:", reason);
@@ -1014,5 +1037,17 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     await touchActivity();
   } catch (e) {
     console.debug("Auto-fill on navigation failed:", e.message);
+  } 
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Watch for session changes to update the badge (toolbar indicator)
+// ─────────────────────────────────────────────────────────────────────────────
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'session' && changes[SESSION_KEY]) {
+    updateBadge();
   }
 });
+
+// Initial badge update on startup
+updateBadge();
