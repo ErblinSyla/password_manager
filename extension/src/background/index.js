@@ -74,18 +74,17 @@ _api.runtime.onInstalled.addListener(() => {
 });
 
 let derivedKey = null;
+let _vaultRestorePromise = null;
 
-// FIX: Changed from 5 min to 10 min as intended
 const AUTO_LOCK_MS = 10 * 60 * 1000;
 const AUTO_LOCK_ALARM = "pm_auto_lock";
 const LAST_ACTIVITY_KEY = "password-manager-last-activity";
 const DEFAULT_CREDENTIALS_KEY = "password-manager-default-credentials";
 const PENDING_SAVE_KEY = "password-manager-pending-save";
 const REMEMBER_ME_KEY = "password-manager-remember-me";
-
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
-
+const VAULT_KEY_CACHE = "pm-vault-key-cache";
 const KEY_CHECK_PLAINTEXT = "pm:vault-key-check:v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,36 +138,66 @@ async function storageLocalSet(key, value) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Badge indicator (toolbar icon overlay)
-// Shows a coloured circle: green when signed in (any state), red when signed out.
+// Badge indicator
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function updateBadge() {
-  // Use the session token to determine if the user is signed in
   const result = await storageSessionGetMany([SESSION_KEY]);
   const session = result?.[SESSION_KEY] ?? null;
   const isSignedIn = !!session?.token;
 
-  if (isSignedIn) {
-    // Green circle for signed in
-    chrome.action.setBadgeBackgroundColor({ color: "#22c55e" });
-    chrome.action.setBadgeText({ text: "●" });
-  } else {
-    // Red circle for signed out / no session
-    chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
-    chrome.action.setBadgeText({ text: "●" });
+  const color = !isSignedIn ? "#ef4444" : !derivedKey ? "#f97316" : "#22c55e";
+
+  const action =
+    (typeof browser !== "undefined" && browser.action) ? browser.action :
+    (typeof chrome !== "undefined" && chrome.action)   ? chrome.action  :
+    null;
+
+  if (!action) return;
+
+  try { action.setBadgeBackgroundColor({ color }); } catch {}
+  try { action.setBadgeText({ text: " " }); } catch {}
+}
+
+async function persistVaultKey() {
+  if (!derivedKey) return;
+  try {
+    const raw = await crypto.subtle.exportKey("raw", derivedKey);
+    const b64 = bytesToBase64(new Uint8Array(raw));
+    await storageSessionSet(VAULT_KEY_CACHE, b64);
+  } catch (e) {
+    console.debug("persistVaultKey failed:", e.message);
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auto-lock
-// FIX: Always check rememberMe before scheduling or firing the alarm.
-//      The previous code ran scheduleAutoLockFromLastActivity() unconditionally
-//      on startup which created an alarm even for "remember me" users.
-// ─────────────────────────────────────────────────────────────────────────────
+async function restoreVaultKey() {
+  try {
+    const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
+    if (rememberMe !== true) return false;
+ 
+    const b64 = await storageSessionGet(VAULT_KEY_CACHE);
+    if (!b64) return false;
+ 
+    const rawBytes = base64ToBytes(b64);
+ 
+    derivedKey = await crypto.subtle.importKey(
+      "raw",
+      rawBytes,
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+ 
+    console.debug("Vault key restored from session cache.");
+    return true;
+  } catch (e) {
+    console.debug("restoreVaultKey failed:", e.message);
+    derivedKey = null;
+    return false;
+  }
+}
 
 async function scheduleAutoLockFromLastActivity() {
-  // FIX: Check rememberMe FIRST — never schedule if the user opted out of auto-lock
   const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
   if (rememberMe === true) {
     await _api.alarms.clear(AUTO_LOCK_ALARM);
@@ -182,9 +211,6 @@ async function scheduleAutoLockFromLastActivity() {
     return;
   }
 
-  // FIX: Add a small buffer (+500 ms) so the alarm never fires fractionally
-  //      early due to timer imprecision — the onAlarm handler still does the
-  //      definitive idle check, so the extra half-second is harmless.
   const when = lastActivity + AUTO_LOCK_MS + 500;
   _api.alarms.create(AUTO_LOCK_ALARM, { when });
 }
@@ -196,9 +222,8 @@ async function touchActivity() {
 
   const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
   if (rememberMe === true) {
-    // FIX: Actively clear any stale alarm that may have been set before
-    //      rememberMe was enabled, instead of just skipping scheduling.
     await _api.alarms.clear(AUTO_LOCK_ALARM);
+    await persistVaultKey();
     return;
   }
 
@@ -207,9 +232,9 @@ async function touchActivity() {
 
 async function lockNow(reason) {
   derivedKey = null;
-  await updateBadge();
-  await storageSessionRemove([LAST_ACTIVITY_KEY]);
+  await storageSessionRemove([LAST_ACTIVITY_KEY, VAULT_KEY_CACHE]);
   await _api.alarms.clear(AUTO_LOCK_ALARM);
+  await updateBadge();
   console.debug("Vault locked:", reason);
 }
 
@@ -221,8 +246,6 @@ _api.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
 
-  // FIX: Re-check rememberMe here too — the preference may have been toggled
-  //      while an alarm was already queued.
   const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
   if (rememberMe === true) {
     await _api.alarms.clear(AUTO_LOCK_ALARM);
@@ -238,23 +261,27 @@ _api.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
 
-  // Not yet idle — reschedule for the remaining time
   await scheduleAutoLockFromLastActivity();
 });
 
-// FIX: On startup, only schedule if vault is actually unlocked AND rememberMe
-//      is off. The old code ran unconditionally and could create a phantom alarm.
 _api.runtime.onStartup?.addListener(async () => {
-  if (!derivedKey) return;
-  const rememberMe = await storageLocalGet(REMEMBER_ME_KEY);
-  if (rememberMe !== true) {
-    void scheduleAutoLockFromLastActivity();
+  const restored = await restoreVaultKey();
+  if (restored) {
+    await updateBadge();
+    await touchActivity();
   }
+  void scheduleAutoLockFromLastActivity();
 });
 
-// Initial schedule attempt — safe because scheduleAutoLockFromLastActivity
-// now guards against rememberMe and missing derivedKey internally.
-void scheduleAutoLockFromLastActivity();
+_vaultRestorePromise = (async () => {
+  const restored = await restoreVaultKey();
+  if (restored) {
+    await updateBadge();
+    await touchActivity();
+  } else {
+    void scheduleAutoLockFromLastActivity();
+  }
+})();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Crypto utilities
@@ -316,7 +343,7 @@ async function deriveVaultKey(masterPassword, saltHex) {
     { name: "PBKDF2", hash: "SHA-256", salt: hexToBytes(saltHex), iterations: 200_000 },
     baseKey,
     { name: "AES-GCM", length: 256 },
-    false,
+    true,
     ["encrypt", "decrypt"]
   );
 }
@@ -599,7 +626,10 @@ _api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "IS_UNLOCKED") {
-    sendResponse?.({ ok: true, unlocked: !!derivedKey });
+    void (async () => {
+      if (_vaultRestorePromise) await _vaultRestorePromise;
+      sendResponse?.({ ok: true, unlocked: !!derivedKey });
+    })();
     return true;
   }
 
@@ -627,7 +657,9 @@ _api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const key = await deriveVaultKey(masterPassword, salt);
         await verifyKeyCheck(key, keyCheckCiphertext, keyCheckIv);
         derivedKey = key;
+        await persistVaultKey();
         await touchActivity();
+        await updateBadge();
         sendResponse?.({ ok: true });
       } catch (e) {
         derivedKey = null;
@@ -980,28 +1012,18 @@ _api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Auto-fill on page navigation ──────────────────────────────────────────────
-// Fires whenever a tab finishes loading a new page. If auto-fill is enabled
-// and the vault is unlocked, attempts to fill login fields automatically —
-// without the user needing to open the popup.
-// ─────────────────────────────────────────────────────────────────────────────
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Only act when the page has fully loaded
   if (changeInfo.status !== "complete") return;
 
   const url = typeof tab?.url === "string" ? tab.url : null;
 
-  // Only injectable pages (http/https)
   if (!isInjectableUrl(url)) return;
 
-  // Vault must be unlocked
   if (!derivedKey) return;
 
-  // Check auto-fill preference
   const enabled = await storageLocalGet("password-manager-autofill-on-load");
   if (enabled !== true) return;
 
-  // Give the page ~400ms to finish rendering dynamic fields
   await new Promise(r => setTimeout(r, 400));
 
   try {
@@ -1011,21 +1033,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     let hostname;
     try { hostname = new URL(url).hostname; } catch { return; }
 
-    // Check if this domain has any saved credentials at all — skip if not
     const credentials = await listCredentialRecordsForHostname(token, hostname);
     if (!Array.isArray(credentials) || credentials.length === 0) return;
 
-    // Inject content script first (it may not be loaded yet on fresh navigation)
     await injectContentScript(tabId, url);
 
-    // Small pause to let the injected script initialise
     await new Promise(r => setTimeout(r, 150));
 
-    // Detect whether the page actually has login fields before filling
     const detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
     if (!detectResp?.ok || !detectResp?.hasPasswordField) return;
 
-    // Find the right credential
     const defaultCredentialId = await getDefaultCredentialId(hostname);
     const selected = credentials.find(c => c.id === defaultCredentialId) || credentials[0];
 
@@ -1049,5 +1066,4 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-// Initial badge update on startup
 updateBadge();
