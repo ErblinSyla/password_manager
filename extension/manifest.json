@@ -1,7 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Password Manager",
+  "name": "TrueLock",
   "version": "1.0.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon16.png"
+  },
 
   "permissions": [
     "storage",
