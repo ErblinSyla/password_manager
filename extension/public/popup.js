@@ -110,6 +110,7 @@ let currentPageHasLoginFields = false;
 
 const API_BASE = "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
+const AUTOFILL_ON_LOAD_KEY = "password-manager-autofill-on-load";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Loader helpers
@@ -133,6 +134,33 @@ function showPageLoader() {
 function hidePageLoader() {
   const loader = document.getElementById('page-loader');
   if (loader) loader.hidden = true;
+}
+
+// ── Auto-fill toggle ──────────────────────────────────────────────────────────
+async function loadAutofillToggle() {
+  const stored = await (isChromeSessionStorageAvailable()
+    ? new Promise(r => chrome.storage.local.get(AUTOFILL_ON_LOAD_KEY, res => r(res?.[AUTOFILL_ON_LOAD_KEY] ?? false)))
+    : Promise.resolve(JSON.parse(localStorage.getItem(AUTOFILL_ON_LOAD_KEY) || "false")));
+
+  const btn = document.getElementById("autofill-toggle");
+  if (btn) btn.setAttribute("aria-checked", String(!!stored));
+}
+
+async function setAutofillOnLoad(enabled) {
+  if (isChromeSessionStorageAvailable()) {
+    await new Promise(r => chrome.storage.local.set({ [AUTOFILL_ON_LOAD_KEY]: enabled }, r));
+  } else {
+    localStorage.setItem(AUTOFILL_ON_LOAD_KEY, JSON.stringify(enabled));
+  }
+  const btn = document.getElementById("autofill-toggle");
+  if (btn) btn.setAttribute("aria-checked", String(enabled));
+}
+
+async function getAutofillOnLoad() {
+  if (isChromeSessionStorageAvailable()) {
+    return new Promise(r => chrome.storage.local.get(AUTOFILL_ON_LOAD_KEY, res => r(res?.[AUTOFILL_ON_LOAD_KEY] === true)));
+  }
+  try { return JSON.parse(localStorage.getItem(AUTOFILL_ON_LOAD_KEY) || "false") === true; } catch { return false; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -911,6 +939,14 @@ async function refreshActiveTabAutofillState() {
   }
 
   await refreshVaultView();
+
+  const autoFillEnabled = await getAutofillOnLoad();
+  if (autoFillEnabled && tabId && isInjectableUrl(url)) {
+    const tab2 = await queryActiveTab(); // re-fetch to get fresh tabId/url
+    const freshTabId = typeof tab2?.id === "number" ? tab2.id : tabId;
+    const freshUrl = typeof tab2?.url === "string" ? tab2.url : url;
+    void sendMessage({ type: "AUTOFILL_ACTIVE_TAB", tabId: freshTabId, url: freshUrl });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1292,6 +1328,12 @@ window.addEventListener("mousemove", reportActivity);
 window.addEventListener("keydown", reportActivity);
 window.addEventListener("click", reportActivity);
 
+document.getElementById("autofill-toggle")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const current = btn.getAttribute("aria-checked") === "true";
+  await setAutofillOnLoad(!current);
+});
+
 document.getElementById("change-password-button")?.addEventListener("click", showChangePasswordModal);
 document.getElementById("forgot-password-link")?.addEventListener("click", (e) => { e.preventDefault(); handleForgotPassword(); });
 
@@ -1301,3 +1343,4 @@ document.getElementById("change-password-modal")?.setAttribute("hidden", "true")
 document.getElementById("forgot-password-modal")?.setAttribute("hidden", "true");
 setViewState({ isAuthed: false, isUnlocked: false });
 void refreshSessionState();
+void loadAutofillToggle();

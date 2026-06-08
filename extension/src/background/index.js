@@ -956,3 +956,63 @@ _api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+// ── Auto-fill on page navigation ──────────────────────────────────────────────
+// Fires whenever a tab finishes loading a new page. If auto-fill is enabled
+// and the vault is unlocked, attempts to fill login fields automatically —
+// without the user needing to open the popup.
+// ─────────────────────────────────────────────────────────────────────────────
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Only act when the page has fully loaded
+  if (changeInfo.status !== "complete") return;
+
+  const url = typeof tab?.url === "string" ? tab.url : null;
+
+  // Only injectable pages (http/https)
+  if (!isInjectableUrl(url)) return;
+
+  // Vault must be unlocked
+  if (!derivedKey) return;
+
+  // Check auto-fill preference
+  const enabled = await storageLocalGet("password-manager-autofill-on-load");
+  if (enabled !== true) return;
+
+  // Give the page ~400ms to finish rendering dynamic fields
+  await new Promise(r => setTimeout(r, 400));
+
+  try {
+    const token = await readAuthToken();
+    if (!token) return;
+
+    let hostname;
+    try { hostname = new URL(url).hostname; } catch { return; }
+
+    // Check if this domain has any saved credentials at all — skip if not
+    const credentials = await listCredentialRecordsForHostname(token, hostname);
+    if (!Array.isArray(credentials) || credentials.length === 0) return;
+
+    // Inject content script first (it may not be loaded yet on fresh navigation)
+    await injectContentScript(tabId, url);
+
+    // Small pause to let the injected script initialise
+    await new Promise(r => setTimeout(r, 150));
+
+    // Detect whether the page actually has login fields before filling
+    const detectResp = await sendMessageToTab(tabId, { type: "DETECT_LOGIN_FIELDS" });
+    if (!detectResp?.ok || !detectResp?.hasPasswordField) return;
+
+    // Find the right credential
+    const defaultCredentialId = await getDefaultCredentialId(hostname);
+    const selected = credentials.find(c => c.id === defaultCredentialId) || credentials[0];
+
+    const username = selected.decrypted?.username || "";
+    const password = selected.decrypted?.password || "";
+    if (!password) return;
+
+    await sendMessageToTabFrames(tabId, { type: "FILL_CREDENTIALS", username, password });
+    await touchActivity();
+  } catch (e) {
+    console.debug("Auto-fill on navigation failed:", e.message);
+  }
+});
