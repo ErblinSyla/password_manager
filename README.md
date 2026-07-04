@@ -44,12 +44,26 @@ Recommended values (match `docker-compose.yml`):
 ```env
 DATABASE_URL="postgresql://<username>:<password>@localhost:5432/<db_name>"
 JWT_SECRET="use-a-long-random-string-at-least-32-chars"
+JWT_EXPIRES_IN="7d"
 PORT=3001
+HOST="0.0.0.0"
+CORS_ORIGIN="*"
+CORS_METHODS="GET,POST,PUT,DELETE"
+CORS_ALLOWED_HEADERS="Content-Type,Authorization"
 ```
 
-Note: `backend/.env.example` may not match the docker-compose credentials.
+The backend will use these values automatically, and `backend/.env.example` contains the same defaults.
 
-### 4) Apply Prisma migrations
+### 4) Extension environment variables
+Create `extension/.env`.
+
+```env
+EXTENSION_API_BASE="http://localhost:3001/api"
+```
+
+The extension uses a small config generation step to turn this into the browser-side config that the popup and background worker read. The config is regenerated automatically when you run the extension dev script.
+
+### 5) Apply Prisma migrations
 From repo root:
 
 ```bash

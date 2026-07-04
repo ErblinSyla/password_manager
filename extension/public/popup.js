@@ -108,7 +108,8 @@ let pendingDeleteId = null;
 let pendingDeleteUntil = 0;
 let currentPageHasLoginFields = false;
 
-const API_BASE = "http://localhost:3001/api";
+const API_BASE = (typeof window !== "undefined" && window.__EXTENSION_CONFIG__?.API_BASE)
+  || "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
 const AUTOFILL_ON_LOAD_KEY = "password-manager-autofill-on-load";
 

@@ -1,3 +1,5 @@
+import { EXTENSION_CONFIG } from "./config.js";
+
 // background/index.js
 // ─────────────────────────────────────────────────────────────────────────────
 // Cross-browser compatibility shim
@@ -82,7 +84,7 @@ const LAST_ACTIVITY_KEY = "password-manager-last-activity";
 const DEFAULT_CREDENTIALS_KEY = "password-manager-default-credentials";
 const PENDING_SAVE_KEY = "password-manager-pending-save";
 const REMEMBER_ME_KEY = "password-manager-remember-me";
-const API_BASE = "http://localhost:3001/api";
+const API_BASE = EXTENSION_CONFIG?.API_BASE || "http://localhost:3001/api";
 const SESSION_KEY = "password-manager-session";
 const VAULT_KEY_CACHE = "pm-vault-key-cache";
 const KEY_CHECK_PLAINTEXT = "pm:vault-key-check:v1";

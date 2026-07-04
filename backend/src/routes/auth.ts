@@ -14,8 +14,10 @@ function deriveVaultKeyForBackend(password: string, saltHex: string): Buffer {
 
 const router = Router();
 
-const createToken = (userId: string, email: string) =>
-  jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: "7d" });
+const createToken = (userId: string, email: string) => {
+  const tokenExpiresIn = (process.env.JWT_EXPIRES_IN || "7d") as import("jsonwebtoken").SignOptions["expiresIn"];
+  return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: tokenExpiresIn });
+};
 
 const resolveSalt = (salt?: unknown) => {
   if (typeof salt === "string" && salt.trim().length > 0) {

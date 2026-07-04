@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "vite public --open /popup.html",
+    "prepare:config": "node scripts/build-config.cjs",
+    "dev": "npm run prepare:config && vite public --open /popup.html",
     "test": "echo \"No tests configured\""
   },
   "keywords": [],
