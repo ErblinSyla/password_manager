@@ -480,12 +480,26 @@ function updateFillButtonsState() {
   });
 }
 
+function formatPageLabel(url, hostname) {
+  if (!url || !hostname || hostname === "-") return "—";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "chrome:" || parsed.protocol === "edge:") {
+      const internalPages = { newtab: "New tab", home: "New tab", extensions: "Browser extensions", settings: "Browser settings" };
+      return internalPages[hostname.toLowerCase()] || "Browser page";
+    }
+    if (["about:", "moz-extension:", "chrome-extension:"].includes(parsed.protocol)) return "Browser page";
+  } catch {}
+  return hostname;
+}
+
 function setDetectedSiteLabels({ url, fieldStatusText }) {
   const domain = (() => { try { return url ? new URL(url).hostname : "-"; } catch { return "-"; } })();
   activeHostname = domain && domain !== "-" ? domain : null;
 
-  if (detectedPageLabel) detectedPageLabel.textContent = domain;
-  if (siteDomainLabel) siteDomainLabel.textContent = domain;
+  const pageLabel = formatPageLabel(url, domain);
+  if (detectedPageLabel) detectedPageLabel.textContent = pageLabel;
+  if (siteDomainLabel) siteDomainLabel.textContent = pageLabel;
   if (siteFieldsStatusLabel) siteFieldsStatusLabel.textContent = fieldStatusText || "-";
 
   // Track whether current page has login fields
@@ -795,7 +809,7 @@ async function refreshVaultView() {
       if (!response?.ok) throw new Error(response?.error || "Unable to load all credentials.");
       credentials = Array.isArray(response.credentials) ? response.credentials : [];
       subtitle = "All saved credentials";
-      pillText = "All";
+      pillText = "All sites";
     } else if (activeHostname) {
       credentials = await fetchCredentialsForDomain(token, activeHostname);
       subtitle = `For ${activeHostname}`;
@@ -806,7 +820,7 @@ async function refreshVaultView() {
           subtitle = `For ${base}`;
         }
       }
-      pillText = "Live";
+      pillText = "This site";
     } else {
       setSavedCount(null, "For this site");
       if (vaultPill) vaultPill.textContent = "";
@@ -884,8 +898,9 @@ async function refreshActiveTabAutofillState() {
   
   activeHostname = domain && domain !== "-" ? domain : null;
 
-  if (detectedPageLabel) detectedPageLabel.textContent = domain;
-  if (siteDomainLabel) siteDomainLabel.textContent = domain;
+  const pageLabel = formatPageLabel(url, domain);
+  if (detectedPageLabel) detectedPageLabel.textContent = pageLabel;
+  if (siteDomainLabel) siteDomainLabel.textContent = pageLabel;
 
   if (!tabId) {
     if (siteFieldsStatusLabel) siteFieldsStatusLabel.textContent = "No active tab";
@@ -1025,7 +1040,7 @@ async function refreshSessionState() {
 
   if (!session?.token) {
     await clearVaultKey();
-    setStatus("Extension ready", "Connects to the local backend on localhost:3001.");
+    setStatus("Extension ready", "Sign in to open your vault.");
     setViewState({ isAuthed: false, isUnlocked: false });
     setDetectedSiteLabels({ url: null, fieldStatusText: "-" });
     activeHostname = null;
@@ -1314,14 +1329,13 @@ function showRecoveryKeyModal(recoveryKey, onConfirm) {
   const display = document.getElementById("recovery-key-display");
   const copyBtn = document.getElementById("copy-recovery-key");
   const confirmBtn = document.getElementById("modal-confirm");
-  const closeBtn = document.getElementById("modal-close");
   if (!modal || !display) return;
   pendingRecoveryKey = recoveryKey;
   pendingCallback = onConfirm;
   display.textContent = recoveryKey;
   copyBtn.onclick = () => { navigator.clipboard.writeText(recoveryKey); copyBtn.textContent = "Copied!"; setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500); };
-  const closeModal = () => { modal.hidden = true; if (pendingCallback) pendingCallback(); pendingRecoveryKey = null; pendingCallback = null; confirmBtn.onclick = null; closeBtn.onclick = null; copyBtn.onclick = null; };
-  confirmBtn.onclick = closeModal; closeBtn.onclick = closeModal;
+  const closeModal = () => { modal.hidden = true; if (pendingCallback) pendingCallback(); pendingRecoveryKey = null; pendingCallback = null; confirmBtn.onclick = null; copyBtn.onclick = null; };
+  confirmBtn.onclick = closeModal;
   modal.hidden = false;
 }
 

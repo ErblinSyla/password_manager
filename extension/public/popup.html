@@ -8,7 +8,7 @@
     <script src="config.js"></script>
     <script defer src="popup.js"></script>
   </head>
-  <body>
+  <body class="popup-page">
     <div class="shell">
       <header class="hero">
         <div class="hero-text">
@@ -20,7 +20,7 @@
           <span class="status-dot"></span>
           <div class="status-text">
             <strong id="connection-title">Ready</strong>
-            <p id="connection-message">Not signed in.</p>
+          <p id="connection-message" aria-live="polite">Sign in to open your vault.</p>
           </div>
           <div class="status-actions">
             <button class="icon-button" type="button" id="change-password-button" hidden title="Change master password">
@@ -141,13 +141,13 @@
       </section>
       <section class="panel" data-when="unlocked" hidden>
         <div class="panel-header compact">
-          <h2 id="vault-title">Passwords</h2>
-          <span class="pill" id="vault-pill">Live</span>
+          <h2 id="vault-title">Vault</h2>
+          <span class="pill" id="vault-pill">This site</span>
         </div>
 
         <div class="vault-scope" role="group" aria-label="Vault view">
           <button class="tab-button is-active" type="button" data-vault-scope="site">This site</button>
-          <button class="tab-button" type="button" data-vault-scope="all">All</button>
+          <button class="tab-button" type="button" data-vault-scope="all">All sites</button>
         </div>
 
         <label class="vault-search" for="vault-search" aria-label="Search credentials">
@@ -232,16 +232,13 @@
               <label class="toggle-label"><input type="checkbox" id="standalone-gen-symbols" checked /> !@#…</label>
             </div>
           </div>
-          <button class="secondary-button" type="button" id="standalone-generator-refresh-button" style="width:100%">↺ Regenerate</button>
+          <button class="secondary-button full-width" type="button" id="standalone-generator-refresh-button">Regenerate</button>
         </div>
       </section>
-      <div id="recovery-modal" class="modal" hidden>
+      <div id="recovery-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" hidden>
         <div class="modal-content">
           <div class="modal-header">
-            <h3>Save your recovery key</h3>
-            <button class="icon-button" id="modal-close" title="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            <h3 id="recovery-title">Save your recovery key</h3>
           </div>
           <div class="modal-body">
             <p class="modal-warning">This key is the <strong>only way</strong> to recover your account if you forget your master password. It will not be shown again.</p>
@@ -255,10 +252,10 @@
           </div>
         </div>
       </div>
-      <div id="change-password-modal" class="modal" hidden>
+      <div id="change-password-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title" hidden>
         <div class="modal-content">
           <div class="modal-header">
-            <h3>Change Master Password</h3>
+            <h3 id="change-password-title">Change master password</h3>
             <button class="icon-button" id="cp-modal-close" title="Close">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -277,10 +274,10 @@
           </div>
         </div>
       </div>
-      <div id="forgot-password-modal" class="modal" hidden>
+      <div id="forgot-password-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" hidden>
         <div class="modal-content">
           <div class="modal-header">
-            <h3>Reset Master Password</h3>
+            <h3 id="forgot-password-title">Reset master password</h3>
             <button class="icon-button" id="fp-modal-close" title="Close">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
